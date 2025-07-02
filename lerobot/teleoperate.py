@@ -29,6 +29,11 @@ python -m lerobot.teleoperate \
     --display_data=true
 ```
 """
+'''
+这是对于SO100等设备的遥操作方法
+松灵PIPER直接用CAN总线相连来遥操作
+如果使用这个方法，就和这个文件无关了
+'''
 
 import logging
 import time
