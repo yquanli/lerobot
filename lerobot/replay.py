@@ -26,6 +26,16 @@ python -m lerobot.replay \
     --dataset.episode=2
 ```
 """
+"""
+```shell
+python -m lerobot.replay \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --robot.control_mode=policy \
+    --dataset.repo_id=Sprinng/record-test \
+    --dataset.episode=0 
+```
+"""
 
 import logging
 import time
@@ -43,6 +53,7 @@ from lerobot.common.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import (
@@ -90,6 +101,7 @@ def replay(cfg: ReplayConfig):
         for i, name in enumerate(dataset.features["action"]["names"]):
             action[name] = action_array[i]
 
+        print(action)
         robot.send_action(action)
 
         dt_s = time.perf_counter() - start_episode_t

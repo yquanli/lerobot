@@ -67,14 +67,15 @@ class PiperLeader(Teleoperator):
         jnt_action_raw = self.robot.GetArmJointCtrl()
         gripper_action_raw = self.robot.GetArmGripperCtrl()
         action_dict = {
-            'joint_1': jnt_action_raw.joint_ctrl.joint_1 * 1e-3,
-            'joint_2': jnt_action_raw.joint_ctrl.joint_2 * 1e-3,
-            'joint_3': jnt_action_raw.joint_ctrl.joint_3 * 1e-3,
-            'joint_4': jnt_action_raw.joint_ctrl.joint_4 * 1e-3,
-            'joint_5': jnt_action_raw.joint_ctrl.joint_5 * 1e-3,
-            'joint_6': jnt_action_raw.joint_ctrl.joint_6 * 1e-3,
-            'gripper': gripper_action_raw.gripper_ctrl.grippers_angle * 1e-3,
+            'joint_1': jnt_action_raw.joint_ctrl.joint_1 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'joint_2': jnt_action_raw.joint_ctrl.joint_2 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'joint_3': jnt_action_raw.joint_ctrl.joint_3 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'joint_4': jnt_action_raw.joint_ctrl.joint_4 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'joint_5': jnt_action_raw.joint_ctrl.joint_5 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'joint_6': jnt_action_raw.joint_ctrl.joint_6 * PiperLeaderConfig.MDEGREE_TO_RAD,
+            'gripper': gripper_action_raw.gripper_ctrl.grippers_angle * PiperLeaderConfig.MM_TO_M,
         }
+
         return action_dict
     
     def send_feedback(self, feedback: dict[str, Any]) -> None:

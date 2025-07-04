@@ -20,6 +20,7 @@ class PiperFollowerConfig(RobotConfig):
     port: str | None = None
     name: str = "piper_follower"
 
+
     # 新增 control_mode 字段，默认为 "teleop"
     control_mode: str = "teleop"
     
@@ -38,7 +39,11 @@ class PiperFollowerConfig(RobotConfig):
     # cameras: dict[str, CameraConfig] = field(default_factory=dict)
     
     # 转换常数
-    RAD_TO_SDK_UNITS: ClassVar[float] = (180.0 / math.pi) * 1000.0
-    SDK_UNITS_TO_RAD: ClassVar[float] = (math.pi / 180.0) / 1000.0
-    MM_TO_SDK_UNITS: ClassVar[float] = 1000.0
-    SDK_UNITS_TO_MM: ClassVar[float] = 0.001
+    """
+    self.robot.GetArmJointCtrl()的单位是1e-3度，JNT_MSGS_TO_RAD将单位从1e-3度转化为1弧度
+    self.robot.JointCtrl()的单位是1e-3度，JNT_RAD_TO_MSGS将单位从1弧度转化为1e-3度
+    """
+    MDEGREE_TO_RAD: ClassVar[float] = (math.pi / 180.0) / 1000.0
+    RAD_TO_MDEGREE: ClassVar[float] = (180.0 / math.pi) * 1000.0
+    MM_TO_M: ClassVar[float] = 0.001
+    M_TO_MM: ClassVar[float] = 1000.0

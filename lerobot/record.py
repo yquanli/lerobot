@@ -34,6 +34,18 @@ python -m lerobot.record \
     # --policy.path=${HF_USER}/my_policy \
 ```
 """
+"""
+```shell
+python -m lerobot.record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --dataset.repo_id=Sprinng/record-test-2 \
+    --dataset.num_episodes=1 \
+    --dataset.single_task="Grab the rag" \
+    --teleop.type=piper_leader \
+    --teleop.id=04 \
+    --display_data=true 
+"""
 
 import logging
 import time
