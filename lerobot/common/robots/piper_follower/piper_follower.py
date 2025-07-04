@@ -205,17 +205,6 @@ class PiperFollower(Robot):
         
         # Convert gripper value to SDK units
         gripper_angle = round(action['gripper'].item() * PiperFollowerConfig.M_TO_MM)
-
-        # # Convert joint values to SDK units
-        # jnt_1 = round(action['joint_1'].item() * 1000)
-        # jnt_2 = round(action['joint_2'].item() * 1000)
-        # jnt_3 = round(action['joint_3'].item() * 1000)
-        # jnt_4 = round(action['joint_4'].item() * 1000)
-        # jnt_5 = round(action['joint_5'].item() * 1000)
-        # jnt_6 = round(action['joint_6'].item() * 1000)
-        
-        # # Convert gripper value to SDK units
-        # gripper_angle = round(action['gripper'].item() * 1000)  # Assuming gripper angle is in mm
         
         # Send the action to the robot
         self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
