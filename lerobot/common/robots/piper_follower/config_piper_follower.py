@@ -19,6 +19,9 @@ class PiperFollowerConfig(RobotConfig):
     #HACK:感觉piper不需要端口号，先这样写着。
     port: str | None = None
     name: str = "piper_follower"
+
+    # 新增 control_mode 字段，默认为 "teleop"
+    control_mode: str = "teleop"
     
     #cameras 使用 RealSenseCameraConfig 实例化
     cameras: dict[str, RealSenseCameraConfig] = field(default_factory=lambda: {
@@ -27,7 +30,7 @@ class PiperFollowerConfig(RobotConfig):
             fps = 30,
             width = 640,
             height = 480,
-            use_depth = True,
+            use_depth = False,
         )
     })
     

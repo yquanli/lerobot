@@ -21,11 +21,8 @@ from .robot import Robot
 
 
 def make_robot_from_config(config: RobotConfig) -> Robot:
-    if config.type == "piper_follower":
-        from .piper_follower import PiperFollower
-
-        return PiperFollower(config)
-    elif config.type == "koch_follower":
+    
+    if config.type == "koch_follower":
         from .koch_follower import KochFollower
 
         return KochFollower(config)
@@ -57,6 +54,10 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         from tests.mocks.mock_robot import MockRobot
 
         return MockRobot(config)
+    elif config.type == "piper_follower":
+        from .piper_follower import PiperFollower
+
+        return PiperFollower(config)
     else:
         raise ValueError(config.type)
 

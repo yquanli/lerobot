@@ -4,10 +4,7 @@ import logging
 import time
 from functools import cached_property
 from typing import Any
-
 import numpy as np
-import torch
-from gymnasium.spaces import Box, Dict
 
 # 导入 LeRobot 基类和相机、机器人设备工具
 from ..robot import Robot
@@ -15,11 +12,11 @@ from lerobot.common.cameras.utils import make_cameras_from_configs
 #from lerobot.common.cameras.realsense import RealSenseCamera
 from lerobot.common.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
+# 导入piper实例管理函数
+from .piper_utils import get_piper_sdk_instance
+
 # 导入我们之前定义好的配置类
 from lerobot.common.robots.piper_follower.config_piper_follower import PiperFollowerConfig
-
-# 假设 piper_sdk 已经安装并可以在 Python 环境中找到
-from piper_sdk import C_PiperInterface_V2
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +28,11 @@ class PiperFollower(Robot):
     config_class = PiperFollowerConfig
     name = "piper_follower"
 
-    def __init__(self, name: str, config: PiperFollowerConfig):
+    def __init__(self, config: PiperFollowerConfig):
+        super().__init__(config)
         # 1. 初始化机械臂 SDK
         self.config = config
-        self.name = name
-        self.robot = C_PiperInterface_V2()
+        self.robot = get_piper_sdk_instance()  # 获取全局唯一的 Piper SDK 实例
 
         # 2. 初始化相机
         # 根据配置实例化相机对象
@@ -44,6 +41,15 @@ class PiperFollower(Robot):
         # 机械臂物理参数
         self.num_joints = 6
         self.gripper_range_mm = [0.0, 70.0]  # 物理开合范围
+        
+        # 根据控制模式决定是否使能
+        if self.config.control_mode == "policy":
+            logger.info("Control mode is 'policy', enabling Piper follower.")
+            # 使能piper follower
+            self.robot.EnablePiper()
+        else:
+            logger.info("Control mode is 'teleop', no extra enabling needed for Piper follower.")
+
     
     # @property
     # def _cameras_ft(self) -> dict[str, tuple]:
@@ -106,7 +112,7 @@ class PiperFollower(Robot):
         """
         检查机械臂和相机是否已连接。
         """
-        return self.robot.__connected() and all(cam.is_connected for cam in self.cameras.values())
+        return True and all(cam.is_connected for cam in self.cameras.values())
 
     def connect(self, calibrate: bool = True) -> None:
 
@@ -128,8 +134,7 @@ class PiperFollower(Robot):
         """
         由于 Piper 已经在上位机上校准，此处不需要实际操作。
         """
-        logger.info(f"{self} is already calibrated, skipping calibration step.")
-        raise NotImplementedError("Piper Follower does not require calibration in code.")
+        pass
     
     def configure(self) -> None:
         """
@@ -156,14 +161,12 @@ class PiperFollower(Robot):
             "joint_5": jnt_state_raw.joint_5,
             "joint_6": jnt_state_raw.joint_6,
             "gripper": gripper_state_raw.grippers_angle,
-            "end_pose": {
-                "x": end_pose_raw.X_axis,
-                "y": end_pose_raw.Y_axis,
-                "z": end_pose_raw.Z_axis, #0.001mm
-                "roll": end_pose_raw.RX_axis,
-                "pitch": end_pose_raw.RY_axis,
-                "yaw": end_pose_raw.RZ_axis #0.001degrees
-            }
+            "end_pose.x": end_pose_raw.X_axis,
+            "end_pose.y": end_pose_raw.Y_axis,
+            "end_pose.z": end_pose_raw.Z_axis, #0.001mm
+            "end_pose.roll": end_pose_raw.RX_axis,
+            "end_pose.pitch": end_pose_raw.RY_axis,
+            "end_pose.yaw": end_pose_raw.RZ_axis #0.001degrees 
         }
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read joint_state: {dt_ms:.1f}ms")
@@ -173,8 +176,10 @@ class PiperFollower(Robot):
             start = time.perf_counter()
             #读取rgb图像
             obs_dict[f"{cam_key}_rgb"] = cam.async_read()
-            #读取深度图像
-            obs_dict[f'{cam_key}_depth'] = cam.read_depth() #TODO：跟着gemini改成异步深度读取
+            if cam.use_depth:
+                depth_image = cam.read_depth()  # 同步读取深度图像
+                depth_image = depth_image[:,:,np.newaxis]  # 添加通道维度
+                obs_dict[f"{cam_key}_depth"] = depth_image #TODO：跟着gemini改成异步深度读取
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
         
@@ -213,7 +218,8 @@ class PiperFollower(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
         
-        # self.robot.DisconnectPort()
+        # self.robot.DisablePiper()
+        self.robot.DisconnectPort()
         for cam in self.cameras.values():
             cam.disconnect()
 

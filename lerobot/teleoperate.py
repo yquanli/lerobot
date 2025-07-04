@@ -29,11 +29,6 @@ python -m lerobot.teleoperate \
     --display_data=true
 ```
 """
-'''
-这是对于SO100等设备的遥操作方法
-松灵PIPER直接用CAN总线相连来遥操作
-如果使用这个方法，就和这个文件无关了
-'''
 
 import logging
 import time
@@ -53,11 +48,13 @@ from lerobot.common.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.common.teleoperators import (
     Teleoperator,
     TeleoperatorConfig,
     make_teleoperator_from_config,
+    piper_leader,
 )
 from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import init_logging, move_cursor_up
@@ -96,7 +93,7 @@ def teleop_loop(
                 if isinstance(val, float):
                     rr.log(f"action_{act}", rr.Scalar(val))
 
-        robot.send_action(action)
+        # robot.send_action(action)
         dt_s = time.perf_counter() - loop_start
         busy_wait(1 / fps - dt_s)
 
