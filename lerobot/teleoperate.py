@@ -28,6 +28,15 @@ python -m lerobot.teleoperate \
     --teleop.id=blue \
     --display_data=true
 ```
+
+```shell
+python -m lerobot.teleoperate \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --teleop.type=piper_leader \
+    --teleop.id=04 \
+    --display_data=true
+```
 """
 
 import logging

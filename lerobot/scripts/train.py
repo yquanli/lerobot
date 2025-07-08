@@ -13,6 +13,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+'''
+python -m lerobot.scripts.train \
+  --dataset.repo_id=Sprinng/act-test \
+  --policy.type=act \
+  --output_dir=outputs/train/act_piper_test \
+  --job_name=act_piper_test \
+  --policy.device=cuda \
+  --wandb.enable=false \
+  --policy.repo_id=Sprinng/my_policy \
+  --policy.push_to_hub=false
+'''
+"""
 import logging
 import time
 from contextlib import nullcontext
