@@ -23,7 +23,10 @@ python -m lerobot.scripts.train \
   --policy.device=cuda \
   --wandb.enable=false \
   --policy.repo_id=Sprinng/my_policy \
-  --policy.push_to_hub=false
+  --policy.push_to_hub=false \
+#如果断点续训
+  --config_path=outputs/train/act_piper_test/checkpoints/last/pretrained_model/train_config.json \   
+  --resume=true
 '''
 """
 import logging

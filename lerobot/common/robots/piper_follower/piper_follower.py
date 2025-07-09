@@ -5,6 +5,7 @@ import time
 from functools import cached_property
 from typing import Any
 import numpy as np
+import torch
 
 # 导入 LeRobot 基类和相机、机器人设备工具
 from ..robot import Robot
@@ -195,16 +196,21 @@ class PiperFollower(Robot):
             if key not in action:
                 raise ValueError(f"Missing required key '{key}' in action dictionary.")
         
+        def get_float_value(value) -> float:
+            if isinstance(value,torch.Tensor):
+                return value.item()
+            return value
+
         # Convert joint values to SDK units
-        jnt_1 = round(action['joint_1'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
-        jnt_2 = round(action['joint_2'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
-        jnt_3 = round(action['joint_3'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
-        jnt_4 = round(action['joint_4'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
-        jnt_5 = round(action['joint_5'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
-        jnt_6 = round(action['joint_6'].item() * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_1 = round(get_float_value(action['joint_1']) * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_2 = round(get_float_value(action['joint_2']) * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_3 = round(get_float_value(action['joint_3']) * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_4 = round(get_float_value(action['joint_4']) * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_5 = round(get_float_value(action['joint_5']) * PiperFollowerConfig.RAD_TO_MDEGREE)
+        jnt_6 = round(get_float_value(action['joint_6']) * PiperFollowerConfig.RAD_TO_MDEGREE)
         
         # Convert gripper value to SDK units
-        gripper_angle = round(action['gripper'].item() * PiperFollowerConfig.M_TO_MM)
+        gripper_angle = round(get_float_value(action['gripper']) * PiperFollowerConfig.M_TO_MM)
         
         # Send the action to the robot
         self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
@@ -217,6 +223,11 @@ class PiperFollower(Robot):
     def disconnect(self):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
+        
+        # Back to the home position
+        self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
+        self.robot.JointCtrl(0, 0, 0, 0, 0, 0)
+        self.robot.GripperCtrl(0, 1000, 0x01, 0)
         
         # self.robot.DisablePiper()
         self.robot.DisconnectPort()

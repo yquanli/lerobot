@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# common/robots/piper_follower/piper_utils.py (新文件，或放在 follower.py 顶部)
-
 from piper_sdk import C_PiperInterface_V2
 
 _shared_sdk_instance = None

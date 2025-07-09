@@ -36,6 +36,7 @@ python -m lerobot.record \
 """
 """
 ```shell
+#① Record a dataset with Piper robot and teleoperate it with another Piper robot.
 python -m lerobot.record \
     --robot.type=piper_follower \
     --robot.id=02 \
@@ -45,6 +46,19 @@ python -m lerobot.record \
     --teleop.type=piper_leader \
     --teleop.id=04 \
     --display_data=true 
+```
+
+```shell
+#② Run inference and evaluate the policy.
+python -m lerobot.record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --robot.control_mode=policy \
+    --dataset.repo_id=Sprinng/eval_act_test \
+    --dataset.single_task="Grab the rag" \
+    --policy.path=outputs/train/act_piper_test/checkpoints/last/pretrained_model \
+    --display_data=true
+```
 """
 
 import logging
@@ -228,7 +242,10 @@ def record_loop(
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
-        # sent_action = robot.send_action(action)
+        if policy is not None:
+            sent_action = robot.send_action(action)
+            if dataset is not None:
+                action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
 
         if dataset is not None:
             # action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
