@@ -27,6 +27,7 @@ python -m lerobot.replay \
 ```
 """
 """
+重播episode，注意是实体上重播，而不是重播视频。
 ```shell
 python -m lerobot.replay \
     --robot.type=piper_follower \

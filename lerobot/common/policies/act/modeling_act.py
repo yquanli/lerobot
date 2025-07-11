@@ -220,9 +220,10 @@ class ACTTemporalEnsembler:
         print("online", avg)
         ```
         """
-        self.chunk_size = chunk_size
-        self.ensemble_weights = torch.exp(-temporal_ensemble_coeff * torch.arange(chunk_size))
-        self.ensemble_weights_cumsum = torch.cumsum(self.ensemble_weights, dim=0)
+        self.chunk_size = chunk_size #动作块的大小（动态更新中相当于滑窗的大小）
+        self.ensemble_weights = torch.exp(-temporal_ensemble_coeff * torch.arange(chunk_size)) # Tensor of weights, For example, if chunk_size=5 and temporal_ensemble_coeff=0.01, 
+        #then ensemble_weights will be Tensor([1.0, 0.9995, 0.999, 0.9985, 0.998]) (weights for the actions in the ensemble).
+        self.ensemble_weights_cumsum = torch.cumsum(self.ensemble_weights, dim=0) #计算Tensor的累积和，例如：torch.cumsum(Tensor([1.0, 0.9995, 0.999, 0.9985, 0.998]), dim=0) = Tensor([1.0, 1.9995, 2.9985, 3.997, 4.9955])
         self.reset()
 
     def reset(self):
@@ -250,7 +251,7 @@ class ACTTemporalEnsembler:
         else:
             # self.ensembled_actions will have shape (batch_size, chunk_size - 1, action_dim). Compute
             # the online update for those entries.
-            self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1]
+            self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1] #
             self.ensembled_actions += actions[:, :-1] * self.ensemble_weights[self.ensembled_actions_count]
             self.ensembled_actions /= self.ensemble_weights_cumsum[self.ensembled_actions_count]
             self.ensembled_actions_count = torch.clamp(self.ensembled_actions_count + 1, max=self.chunk_size)
@@ -261,9 +262,9 @@ class ACTTemporalEnsembler:
             )
         # "Consume" the first action.
         action, self.ensembled_actions, self.ensembled_actions_count = (
-            self.ensembled_actions[:, 0],
-            self.ensembled_actions[:, 1:],
-            self.ensembled_actions_count[1:],
+            self.ensembled_actions[:, 0], # 滑窗中的第一个动作（最老的动作）输出并执行
+            self.ensembled_actions[:, 1:], # 滑窗中的剩余动作
+            self.ensembled_actions_count[1:], # 滑窗中剩余动作的计数
         )
         return action
 
@@ -303,6 +304,7 @@ class ACT(nn.Module):
                                 └───────────────────────┘
     """
 
+    # 设置网络的所有构建模块
     def __init__(self, config: ACTConfig):
         # BERT style VAE encoder with input tokens [cls, robot_state, *action_sequence].
         # The cls token forms parameters of the latent's distribution (like this [*means, *log_variances]).
@@ -390,6 +392,7 @@ class ACT(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
+    # forward 方法定义了数据在单次前向传播中如何流经网络
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
