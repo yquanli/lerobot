@@ -565,8 +565,20 @@ class ACTEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
         self.linear2 = nn.Linear(config.dim_feedforward, config.dim_model)
 
+        """
+        LayerNorm 有两个可学习的参数：gamma (缩放) 和 beta (平移)。
+        norm1用于处理和自注意力模块相关的输入/输出，
+        norm2用于处理和前馈网络的输出相关的输入/输出。
+        各司其职，参数不能混淆，所以设了两个层；
+        具体位置由pre_norm标志决定。
+        """
         self.norm1 = nn.LayerNorm(config.dim_model)
         self.norm2 = nn.LayerNorm(config.dim_model)
+
+        """
+        dropout1 的作用是正则化自注意力模块的输出。
+        dropout2 的作用是正则化前馈网络的输出。
+        """
         self.dropout1 = nn.Dropout(config.dropout)
         self.dropout2 = nn.Dropout(config.dropout)
 

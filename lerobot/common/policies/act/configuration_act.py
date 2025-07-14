@@ -109,7 +109,13 @@ class ACTConfig(PreTrainedConfig):
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: int = False
     # Transformer layers.
+    """
+    前置归一化标记
+    ① pre_norm = True，（前置归一化）流程: 输入 -> [层归一化] -> [子模块] -> [残差连接]
+    ② pre_norm = False，（后置归一化）流程: 输入 -> [子模块] -> [残差连接] -> [层归一化]
+    """
     pre_norm: bool = False
+    
     dim_model: int = 512
     n_heads: int = 8
     dim_feedforward: int = 3200
