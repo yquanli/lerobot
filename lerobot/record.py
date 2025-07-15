@@ -242,6 +242,8 @@ def record_loop(
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
+        # 只有在有 policy 的时候才会发送 action 
+        # TODO：这里没有遵从原来clip_action 的逻辑，直接发了action
         if policy is not None:
             sent_action = robot.send_action(action)
             if dataset is not None:
@@ -338,6 +340,19 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
         ):
             log_say("Reset the environment", cfg.play_sounds)
+
+            # 检查 policy 是否被加载。如果是，则调用 go_home() 方法。
+            # 这确保了只有在使用 policy（例如评估时）才会自动复位。
+            # 使用 teleop 手动录制数据时，此段代码不会执行，给予操作者手动复位的自由。
+            if policy is not None:
+                log_say("Policy detected. Resetting robot to home position.", cfg.play_sounds)
+                try:
+                    robot.back_to_zero() 
+                except AttributeError:
+                    logging.warning(
+                        "Robot object does not have a 'go_home' method. Skipping automatic reset."
+                    )
+
             record_loop(
                 robot=robot,
                 events=events,

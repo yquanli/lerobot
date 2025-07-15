@@ -21,7 +21,7 @@ python -m lerobot.scripts.train \
   --output_dir=outputs/train/act_piper_test \
   --job_name=act_piper_test \
   --policy.device=cuda \
-  --wandb.enable=false \
+  --wandb.enable=true \
   --policy.repo_id=Sprinng/my_policy \
   --policy.push_to_hub=false \
 #如果断点续训

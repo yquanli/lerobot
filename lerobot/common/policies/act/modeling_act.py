@@ -311,26 +311,37 @@ class ACT(nn.Module):
         super().__init__()
         self.config = config
 
+        # VAE encoder related
         if self.config.use_vae:
             self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)
+            
+            # 创建可学习的类标记嵌入（cls token embedding）
             self.vae_encoder_cls_embed = nn.Embedding(1, config.dim_model)
+            
+            # 以下两步分别将机器人的状态向量和动作向量投影到变分自编码器的隐藏维度（Transformer内部统一的工作维度）
             # Projection layer for joint-space configuration to hidden dimension.
             if self.config.robot_state_feature:
                 self.vae_encoder_robot_state_input_proj = nn.Linear(
                     self.config.robot_state_feature.shape[0], config.dim_model
-                )
+                ) 
             # Projection layer for action (joint-space target) to hidden dimension.
             self.vae_encoder_action_input_proj = nn.Linear(
                 self.config.action_feature.shape[0],
                 config.dim_model,
             )
+
             # Projection layer from the VAE encoder's output to the latent distribution's parameter space.
+            # 此线性层的输入是dim_model，输出是latent_dim*2，一个均值μ，一个方差δ
             self.vae_encoder_latent_output_proj = nn.Linear(config.dim_model, config.latent_dim * 2)
+
             # Fixed sinusoidal positional embedding for the input to the VAE encoder. Unsqueeze for batch
             # dimension.
+            # CLS(1)+chunk_size+robot_state(1 if used)
             num_input_token_encoder = 1 + config.chunk_size
             if self.config.robot_state_feature:
                 num_input_token_encoder += 1
+
+            # 固定的位置编码
             self.register_buffer(
                 "vae_encoder_pos_enc",
                 create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
@@ -533,6 +544,7 @@ class ACT(nn.Module):
 
         actions = self.action_head(decoder_out)
 
+        # 返回预测的动作，以及VAE的均值和对数方差（如果在训练中计算了的话）
         return actions, (mu, log_sigma_x2)
 
 

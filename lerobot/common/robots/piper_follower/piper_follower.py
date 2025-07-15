@@ -220,15 +220,21 @@ class PiperFollower(Robot):
         logger.info(f"{self} sent action: {action}")
         return action #TODO：安全范围界定
 
-    def disconnect(self):
-        if not self.is_connected:
-            raise DeviceNotConnectedError(f"{self} is not connected.")
-        
+    def back_to_zero(self):
         # Back to the home position
         self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
         self.robot.JointCtrl(0, 0, 0, 0, 0, 0)
         self.robot.GripperCtrl(0, 1000, 0x01, 0)
+        print("Piper is back to zero.")
+        return None
+
+    def disconnect(self):
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
         
+        # 机械臂回到零位
+        self.back_to_zero()
+
         # self.robot.DisablePiper()
         self.robot.DisconnectPort()
         for cam in self.cameras.values():
