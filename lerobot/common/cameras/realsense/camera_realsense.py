@@ -18,7 +18,7 @@ Provides the RealSenseCamera class for capturing frames from Intel RealSense cam
 
 import logging
 import time
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, Condition
 from typing import Any, Dict, List
 
 import cv2
@@ -130,18 +130,23 @@ class RealSenseCamera(Camera):
         self.rs_profile: rs.pipeline_profile | None = None
 
         self.thread: Thread | None = None
-        self.stop_event: Event | None = None
-        self.frame_lock: Lock = Lock()
-        
+        self.stop_event: Event = Event()        
+        # 新增深度异步读取相关属性而做出的修改
+        # self.frame_lock: Lock = Lock()
+        # 使用 Condition 变量进行更健壮的线程同步
+        self.condition: Condition = Condition(Lock())
+
         # 新增深度异步读取相关属性而做出的修改
         # self.latest_frame: np.ndarray | None = None
         self.latest_color_frame: np.ndarray | None = None
         self.latest_depth_frame: np.ndarray | None = None
-        # <<< 新增：消费状态标志位 >>>
-        self.color_frame_consumed: bool = True
-        self.depth_frame_consumed: bool = True
 
-        self.new_frame_event: Event = Event()
+        # 帧计数器，用于同步
+        self.frame_counter: int = 0
+        self.last_color_frame_count: int = -1
+        self.last_depth_frame_count: int = -1
+
+        # self.new_frame_event: Event = Event()
 
         self.rotation: int | None = get_cv2_rotation(config.rotation)
 
@@ -476,63 +481,67 @@ class RealSenseCamera(Camera):
         Internal loop run by the background thread for asynchronous reading.
         On each iteration, it reads both color and depth frames and stores them.
         """
+        """
+        后台线程循环：只有在成功获取到有效的彩色帧后，才更新缓冲区和计数器，并发出通知。
+        """
         while not self.stop_event.is_set():
             try:
-                if not self.is_connected:
-                    raise DeviceNotConnectedError(f"{self} is not connected.")
+                ret, frameset = self.rs_pipeline.try_wait_for_frames(timeout_ms=1000)
+                if not ret or not frameset:
+                    continue
 
-                ret, frame = self.rs_pipeline.try_wait_for_frames(timeout_ms=500)
-                if not ret or frame is None:
-                    raise RuntimeError(f"{self} read failed (status={ret}).")
+                # <<< 关键逻辑修改：只要有任何一个有效帧，就进行处理并通知 >>>
+                color_frame = frameset.get_color_frame()
+                depth_frame = frameset.get_depth_frame() if self.use_depth else None
 
-                # Process color image
-                color_frame = frame.get_color_frame()
-                color_image_raw = np.asanyarray(color_frame.get_data())
-                color_image_processed = self._postprocess_image(color_image_raw, self.color_mode)
+                # 只有在至少获取到一个有效帧时才继续
+                if not color_frame and not depth_frame:
+                    continue
 
-                depth_image_processed = None
-                # Process depth image if enabled
-                if self.use_depth:
-                    depth_frame = frame.get_depth_frame()
-                    if depth_frame:
-                        depth_map_raw = np.asanyarray(depth_frame.get_data())
-                        depth_image_processed = self._postprocess_image(depth_map_raw, depth_frame=True)
+                color_image_proc = None
+                if color_frame:
+                    color_image_proc = self._postprocess_image(
+                        np.asanyarray(color_frame.get_data()), self.color_mode
+                    )
 
-                # Safely update both frames
-                with self.frame_lock:
-                    self.latest_color_frame = color_image_processed
-                    if self.use_depth:
-                        self.latest_depth_frame = depth_image_processed
-                
-                self.new_frame_event.set()
+                depth_image_proc = None
+                if depth_frame:
+                    depth_image_proc = self._postprocess_image(
+                        np.asanyarray(depth_frame.get_data()), depth_frame=True
+                    )
+
+                # 原子性地更新所有内容
+                with self.condition:
+                    # 更新缓冲区，即使其中一个可能是None
+                    self.latest_color_frame = color_image_proc
+                    self.latest_depth_frame = depth_image_proc
+                    
+                    self.frame_counter += 1
+                    self.condition.notify_all() # 唤醒所有等待的消费者
+
+            except Exception as e:
+                logger.error(f"Error in read loop for {self}: {e}", exc_info=True)
+                break
 
             except DeviceNotConnectedError:
                 break
-            except Exception as e:
-                logger.warning(f"Error reading frame in background thread for {self}: {e}")
 
     def _start_read_thread(self) -> None:
         """Starts or restarts the background read thread if it's not running."""
-        if self.thread is not None and self.thread.is_alive():
-            self.thread.join(timeout=0.1)
-        if self.stop_event is not None:
-            self.stop_event.set()
-
-        self.stop_event = Event()
-        self.thread = Thread(target=self._read_loop, args=(), name=f"{self}_read_loop")
-        self.thread.daemon = True
+        if self.thread and self.thread.is_alive():
+            return # 线程已在运行
+        self.stop_event.clear()
+        self.thread = Thread(target=self._read_loop, name=f"{self}_read_loop", daemon=True)
         self.thread.start()
 
     def _stop_read_thread(self):
         """Signals the background read thread to stop and waits for it to join."""
-        if self.stop_event is not None:
+        if self.thread and self.thread.is_alive():
             self.stop_event.set()
-
-        if self.thread is not None and self.thread.is_alive():
+            with self.condition:
+                self.condition.notify_all() # 唤醒可能正在等待的线程，使其能检查到stop_event
             self.thread.join(timeout=2.0)
-
         self.thread = None
-        self.stop_event = None
 
     # NOTE(Steven): Missing implementation for depth for now
     def async_read(self, timeout_ms: float = 200) -> np.ndarray:
@@ -556,28 +565,29 @@ class RealSenseCamera(Camera):
             TimeoutError: If no frame data becomes available within the specified timeout.
             RuntimeError: If the background thread died unexpectedly or another error occurs.
         """
+        """异步、线程安全地读取最新的彩色帧。"""
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         if self.thread is None or not self.thread.is_alive():
             self._start_read_thread()
 
-        if not self.new_frame_event.wait(timeout=timeout_ms / 1000.0):
-            thread_alive = self.thread is not None and self.thread.is_alive()
-            raise TimeoutError(
-                f"Timed out waiting for frame from camera {self} after {timeout_ms} ms. "
-                f"Read thread alive: {thread_alive}."
+        with self.condition:
+            # BUGFIX: The predicate must check not only for a new frame count,
+            # but also that the specific frame buffer we need is not None.
+            predicate = lambda: self.frame_counter > self.last_color_frame_count and self.latest_color_frame is not None
+            
+            success = self.condition.wait_for(
+                predicate, 
+                timeout=timeout_ms / 1000.0
             )
-
-        with self.frame_lock:
-            # 新增深度异步读取相关属性而做出的修改
-            # frame = self.latest_frame
+            if not success:
+                raise TimeoutError(f"Timeout waiting for a new, valid color frame from {self}.")
+            
+            # Because the predicate passed, frame is guaranteed to be valid.
             frame = self.latest_color_frame
-            # self.new_frame_event.clear()
-
-        if frame is None:
-            raise RuntimeError(f"Internal error: Event set but no frame available for {self}.")
-
+            self.last_color_frame_count = self.frame_counter
+        
         return frame
     
     # 新增深度异步读取相关属性而做出的修改
@@ -585,29 +595,30 @@ class RealSenseCamera(Camera):
         """
         Reads the latest available depth frame asynchronously.
         """
+        """异步、线程安全地读取最新的深度帧。"""
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
         if not self.use_depth:
-            raise RuntimeError(
-                f"Failed to capture depth frame with '.async_read_depth()'. Depth stream is not enabled for {self}."
-            )
+            raise RuntimeError("Depth stream not enabled.")
 
         if self.thread is None or not self.thread.is_alive():
             self._start_read_thread()
+            
+        with self.condition:
+            # BUGFIX: The predicate must check not only for a new frame count,
+            # but also that the specific frame buffer we need is not None.
+            predicate = lambda: self.frame_counter > self.last_depth_frame_count and self.latest_depth_frame is not None
 
-        if not self.new_frame_event.wait(timeout=timeout_ms / 1000.0):
-            thread_alive = self.thread is not None and self.thread.is_alive()
-            raise TimeoutError(
-                f"Timed out waiting for frame from camera {self} after {timeout_ms} ms. "
-                f"Read thread alive: {thread_alive}."
+            success = self.condition.wait_for(
+                predicate,
+                timeout=timeout_ms / 1000.0
             )
-
-        with self.frame_lock:
+            if not success:
+                raise TimeoutError(f"Timeout waiting for a new, valid depth frame from {self}.")
+            
+            # Because the predicate passed, frame is guaranteed to be valid.
             frame = self.latest_depth_frame
-            self.new_frame_event.clear()
-
-        if frame is None:
-            raise RuntimeError(f"Internal error: Event set but no depth frame available for {self}.")
+            self.last_depth_frame_count = self.frame_counter
 
         return frame
 
