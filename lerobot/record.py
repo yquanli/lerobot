@@ -54,9 +54,9 @@ python -m lerobot.record \
     --robot.type=piper_follower \
     --robot.id=02 \
     --robot.control_mode=policy \
-    --dataset.repo_id=Sprinng/eval_act_test \
-    --dataset.single_task="Grab the rag" \
-    --policy.path=outputs/train/act_piper_test/checkpoints/last/pretrained_model \
+    --dataset.repo_id=Sprinng/eval_act_stack_cube_test_3 \
+    --dataset.single_task="Stack cube to the other" \
+    --policy.path=outputs/train/act_stack_cube_test/checkpoints/last/pretrained_model \
     --display_data=true
 ```
 """

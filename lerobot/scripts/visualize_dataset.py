@@ -60,8 +60,8 @@ local$ rerun ws://localhost:9087
 ```
 
 ```本机使用，默认在hugging face cache中加载数据，repo-id直接填/home/zwt/.cache/huggingface/lerobot下的具体文件夹
-$ python lerobot/scripts/visualize_dataset.py \
-    --repo-id Sprinng/record-test-2 \     
+python lerobot/scripts/visualize_dataset.py \
+    --repo-id Sprinng/eval_act_stack_cube_test_tee \    
     --episode-index 0 \
 ```
 """
