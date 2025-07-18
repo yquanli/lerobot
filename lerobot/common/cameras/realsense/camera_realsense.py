@@ -484,15 +484,21 @@ class RealSenseCamera(Camera):
         """
         后台线程循环：只有在成功获取到有效的彩色帧后，才更新缓冲区和计数器，并发出通知。
         """
+        logger.info(f"Background read thread started for {self}.")
+        align = rs.align(rs.stream.color)
+
         while not self.stop_event.is_set():
             try:
-                ret, frameset = self.rs_pipeline.try_wait_for_frames(timeout_ms=1000)
+                ret, frameset = self.rs_pipeline.try_wait_for_frames(timeout_ms=500)
                 if not ret or not frameset:
                     continue
+                
+                # 对齐帧集
+                aligned_frameset = align.process(frameset)
 
                 # <<< 关键逻辑修改：只要有任何一个有效帧，就进行处理并通知 >>>
-                color_frame = frameset.get_color_frame()
-                depth_frame = frameset.get_depth_frame() if self.use_depth else None
+                color_frame = aligned_frameset.get_color_frame()
+                depth_frame = aligned_frameset.get_depth_frame() if self.use_depth else None
 
                 # 只有在至少获取到一个有效帧时才继续
                 if not color_frame and not depth_frame:
@@ -519,12 +525,16 @@ class RealSenseCamera(Camera):
                     self.frame_counter += 1
                     self.condition.notify_all() # 唤醒所有等待的消费者
 
+            except RuntimeError as e:
+                # 忽略超时错误，这是正常现象
+                if "Frame did not arrive in time" not in str(e):
+                    logger.warning(f"Error in read_loop for {self}: {e}. Retrying...")
+                    time.sleep(0.5)
             except Exception as e:
-                logger.error(f"Error in read loop for {self}: {e}", exc_info=True)
+                logger.error(f"Unexpected error in read_loop for {self}: {e}", exc_info=True)
                 break
+        logger.info(f"Background read thread stopped for {self}.")
 
-            except DeviceNotConnectedError:
-                break
 
     def _start_read_thread(self) -> None:
         """Starts or restarts the background read thread if it's not running."""
@@ -585,7 +595,7 @@ class RealSenseCamera(Camera):
                 raise TimeoutError(f"Timeout waiting for a new, valid color frame from {self}.")
             
             # Because the predicate passed, frame is guaranteed to be valid.
-            frame = self.latest_color_frame
+            frame = self.latest_color_frame.copy() # 使用.copy()返回独立副本
             self.last_color_frame_count = self.frame_counter
         
         return frame
@@ -617,7 +627,7 @@ class RealSenseCamera(Camera):
                 raise TimeoutError(f"Timeout waiting for a new, valid depth frame from {self}.")
             
             # Because the predicate passed, frame is guaranteed to be valid.
-            frame = self.latest_depth_frame
+            frame = self.latest_depth_frame.copy() # 使用.copy()返回独立副本
             self.last_depth_frame_count = self.frame_counter
 
         return frame

@@ -361,9 +361,31 @@ def get_safe_version(repo_id: str, version: str | packaging.version.Version) -> 
 
 
 def get_hf_features_from_features(features: dict) -> datasets.Features:
+    """
+    从LeRobot的自定义特征字典中，构建出HuggingFace `datasets`库所要求的`Features`对象。
+
+    这个函数是数据集创建流程中的关键一步，它定义了最终生成的Parquet文件的列结构和
+    数据类型。它会迭代我们内部定义的`features`字典，并进行如下转换：
+
+    - 对于像关节状态(`observation.state`)或动作(`action`)这样的数值数组，它会创建
+      `datasets.Sequence`或`datasets.Value`。
+    - 对于RGB图像(`dtype='image'`)，它会创建`datasets.Image()`类型，以便直接在
+      数据集中预览。
+    - **核心逻辑**：对于`dtype`为'video'或我们新增的'depth'的特征，此函数会
+      显式地`continue`并跳过它们。这是因为这些数据（如RGB视频和深度视频）体积庞大，
+      不会被直接写入Parquet文件，而是作为独立的视频文件存储在旁边。Parquet文件
+      中只保存与它们关联的时间戳等元数据。
+
+    Args:
+        features (dict): LeRobot框架内部使用的特征描述字典。
+
+    Returns:
+        datasets.Features: 一个配置好的`datasets.Features`实例，用于初始化
+                           或加载一个HuggingFace数据集。
+    """
     hf_features = {}
     for key, ft in features.items():
-        if ft["dtype"] == "video":
+        if ft["dtype"] in ["video", "depth"]:
             continue
         elif ft["dtype"] == "image":
             hf_features[key] = datasets.Image()
@@ -396,6 +418,21 @@ def _validate_feature_names(features: dict[str, dict]) -> None:
 def hw_to_dataset_features(
     hw_features: dict[str, type | tuple], prefix: str, use_video: bool = True
 ) -> dict[str, dict]:
+    """
+    将原始硬件特征（如电机列表和相机图像形状）转换为LeRobot数据集的标准特征定义字典。
+
+    这个函数是数据集初始化的关键步骤，它负责建立一个结构化的特征模式（schema），
+    从而标准化不同机器人和传感器的数据。
+
+    核心功能：
+    1.  处理关节/电机数据：将浮点数列表转换为 "observation.state" 或 "action" 特征。
+    2.  处理视觉数据：将代表图像形状的元组（tuple）转换为 "observation.images.{key}" 特征。
+
+    为支持深度信息所做的核心修改：
+    - **自动识别深度图** ：通过检查`hw_features`中形状元组的维度（二维代表深度图，三维代表RGB图）来自动区分深度数据和彩色图像。
+    - **创建标准深度键名**：当识别到深度图时，会为其创建一个遵循LeRobot约定的标准键名，即 `observation.depth.{key}`。
+    - **统一存储类型**：无论是深度图还是RGB图，它们的`dtype`都被设置为'video'（或'image'），这确保了它们都将遵循相同的处理流程——即被编码成视频文件，而不是直接写入Parquet表格。
+    """
     features = {}
     joint_fts = {key: ftype for key, ftype in hw_features.items() if ftype is float}
     cam_fts = {key: shape for key, shape in hw_features.items() if isinstance(shape, tuple)}
@@ -415,11 +452,25 @@ def hw_to_dataset_features(
         }
 
     for key, shape in cam_fts.items():
-        features[f"{prefix}.images.{key}"] = {
-            "dtype": "video" if use_video else "image",
-            "shape": shape,
-            "names": ["height", "width", "channels"],
-        }
+        # 通过检查形状是否为2D来判断是否为深度图
+        is_depth = len(shape) == 2
+
+        if is_depth:
+            # 为深度图创建特征
+            # 注意：我们仍然使用'video'类型，因为最终它会被编码成视频。
+            # 关键在于键名 "observation.depth.{key}"
+            features[f"observation.depth.{key}"] = {
+                "dtype": "video" if use_video else "image",
+                "shape": shape,
+                "names": ["height", "width"],
+            }
+        else:
+            # 原有的RGB图像处理逻辑    
+            features[f"{prefix}.images.{key}"] = {
+                "dtype": "video" if use_video else "image",
+                "shape": shape,
+                "names": ["height", "width", "channels"],
+            }
 
     _validate_feature_names(features)
     return features
@@ -428,15 +479,34 @@ def hw_to_dataset_features(
 def build_dataset_frame(
     ds_features: dict[str, dict], values: dict[str, Any], prefix: str
 ) -> dict[str, np.ndarray]:
+    """
+    根据数据集的特征定义，从原始传感器值字典中构建并返回一帧完整的数据。
+
+    这个函数在数据记录的每一帧都会被调用。它扮演着“数据整理员”的角色，
+    确保从`robot.get_observation()`返回的、多样化的传感器读数（`values`），
+    被正确地整理进一个符合LeRobot数据集最终存储格式的字典（`frame`）中。
+
+    核心功能：
+    1.  遍历数据集的所有预期特征（`ds_features`），并筛选出与当前`prefix`（如"observation"）匹配的特征。
+    2.  对于每个特征，直接使用其完整的、标准的键名（例如 "observation.images.wrist" 或 "observation.depth.wrist"）
+        在`values`字典中进行查找。
+    3.  这种直接的一一对应查找机制保证了不同模态（如RGB和深度）之间不会产生任何混淆。
+    4.  将找到的数据整理成NumPy数组并存入返回的`frame`字典中。
+    """
     frame = {}
     for key, ft in ds_features.items():
         if key in DEFAULT_FEATURES or not key.startswith(prefix):
             continue
         elif ft["dtype"] == "float32" and len(ft["shape"]) == 1:
             frame[key] = np.array([values[name] for name in ft["names"]], dtype=np.float32)
-        elif ft["dtype"] in ["image", "video"]:
-            frame[key] = values[key.removeprefix(f"{prefix}.images.")]
-
+        # (核心修正) 对于所有视觉数据（RGB, 深度等）
+        elif ft["dtype"] in ["image", "video", "depth"]:
+            # 直接使用完整的键名进行查找，确保无歧义
+            if key in values:
+                frame[key] = values[key]
+            else:
+                # 这是一个安全检查，以防某个预期的视觉数据没有在'values'中提供
+                logger.warning(f"Feature '{key}' defined in dataset schema but not found in provided values.")
     return frame
 
 
