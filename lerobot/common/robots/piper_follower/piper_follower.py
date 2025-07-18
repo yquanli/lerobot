@@ -35,8 +35,7 @@ class PiperFollower(Robot):
         self.config = config
         self.robot = get_piper_sdk_instance()  # 获取全局唯一的 Piper SDK 实例
 
-        # 2. 初始化相机
-        # 根据配置实例化相机对象
+        # 2. 根据配置实例化相机对象
         self.cameras = make_cameras_from_configs(config.cameras)
 
         # 机械臂物理参数
@@ -84,10 +83,12 @@ class PiperFollower(Robot):
         camera_features = {}
         for cam_name, cam_config in self.config.cameras.items():
             # RGB 图像特征
-            camera_features[f"{cam_name}_rgb"] = (cam_config.height, cam_config.width, 3)
-            # 深度图像特征
+            camera_features[f"observation.images.{cam_name}"] = (cam_config.height, cam_config.width, 3)
+            # 新增：深度图像特征
             if cam_config.use_depth:
-                camera_features[f"{cam_name}_depth"] = (cam_config.height, cam_config.width, 1)
+                # 深度图是单通道的 (H, W)
+                camera_features[f"observation.depth.{cam_name}"] = (cam_config.height, cam_config.width)
+
 
         # 合并所有特征到一个字典中
         return {**motor_and_pose_features, **camera_features}
@@ -175,8 +176,8 @@ class PiperFollower(Robot):
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():
             start = time.perf_counter()
-            #读取rgb图像
-            obs_dict[f"{cam_key}_rgb"] = cam.async_read()
+            # 读取rgb图像
+            obs_dict[f"observation.images.{cam_key}"] = cam.async_read() # 使用同步读取以保证与深度图对齐
             if cam.use_depth:
                 # depth_image = cam.read_depth()  # 同步读取深度图像
                 depth_image = cam.async_read_depth()
