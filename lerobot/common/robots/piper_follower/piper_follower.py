@@ -179,10 +179,7 @@ class PiperFollower(Robot):
             # 读取rgb图像
             obs_dict[f"observation.images.{cam_key}"] = cam.async_read() # 使用同步读取以保证与深度图对齐
             if cam.use_depth:
-                # depth_image = cam.read_depth()  # 同步读取深度图像
-                depth_image = cam.async_read_depth()
-                depth_image = depth_image[:,:,np.newaxis]  # 添加通道维度
-                obs_dict[f"{cam_key}_depth"] = depth_image #TODO：跟着gemini改成异步深度读取
+                obs_dict[f"observation.depth.{cam_key}"] = cam.async_read_depth() #TODO：跟着gemini改成异步深度读取
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
         

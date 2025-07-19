@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import PIL.Image
 import torch
+import cv2
 
 
 def safe_stop_image_writer(func):
@@ -70,6 +71,10 @@ def image_array_to_pil_image(image_array: np.ndarray, range_check: bool = True) 
 
 def write_image(image: np.ndarray | PIL.Image.Image, fpath: Path):
     try:
+        if isinstance(image, np.ndarray) and image.dtype == np.uint16:
+            cv2.imwrite(str(fpath), image)
+            return  # 处理完特殊情况后直接返回
+        
         if isinstance(image, np.ndarray):
             img = image_array_to_pil_image(image)
         elif isinstance(image, PIL.Image.Image):

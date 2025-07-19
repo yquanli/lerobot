@@ -31,14 +31,14 @@ class PiperFollowerConfig(RobotConfig):
             fps = 30,
             width = 640,
             height = 480,
-            use_depth = False,
+            use_depth = True,
         ),
         "front": RealSenseCameraConfig(
             serial_number_or_name="137322078934",  # 正前方的d435i相机，可以用find_cameras()获取
             fps = 30,
             width = 640,
             height = 480,
-            use_depth = False,
+            use_depth = True,
         )
     })
     

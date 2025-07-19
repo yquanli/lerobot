@@ -44,6 +44,8 @@ from lerobot.common.robots import Robot
 from lerobot.common.utils.utils import is_valid_numpy_dtype_string
 from lerobot.configs.types import DictLike, FeatureType, PolicyFeature
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_CHUNK_SIZE = 1000  # Max number of episodes per chunk
 
 INFO_PATH = "meta/info.json"
@@ -419,58 +421,45 @@ def hw_to_dataset_features(
     hw_features: dict[str, type | tuple], prefix: str, use_video: bool = True
 ) -> dict[str, dict]:
     """
-    将原始硬件特征（如电机列表和相机图像形状）转换为LeRobot数据集的标准特征定义字典。
-
-    这个函数是数据集初始化的关键步骤，它负责建立一个结构化的特征模式（schema），
-    从而标准化不同机器人和传感器的数据。
-
-    核心功能：
-    1.  处理关节/电机数据：将浮点数列表转换为 "observation.state" 或 "action" 特征。
-    2.  处理视觉数据：将代表图像形状的元组（tuple）转换为 "observation.images.{key}" 特征。
-
-    为支持深度信息所做的核心修改：
-    - **自动识别深度图** ：通过检查`hw_features`中形状元组的维度（二维代表深度图，三维代表RGB图）来自动区分深度数据和彩色图像。
-    - **创建标准深度键名**：当识别到深度图时，会为其创建一个遵循LeRobot约定的标准键名，即 `observation.depth.{key}`。
-    - **统一存储类型**：无论是深度图还是RGB图，它们的`dtype`都被设置为'video'（或'image'），这确保了它们都将遵循相同的处理流程——即被编码成视频文件，而不是直接写入Parquet表格。
+    (最终健壮版)
+    将硬件特征转换为LeRobot数据集的标准特征定义。
+    此版本能智能处理两种输入键名：
+    1. 简单键名 (如 'wrist', 'wrist_depth'): 会为其自动添加标准前缀。
+    2. 完整的LeRobot标准键名 (如 'observation.images.wrist'): 会直接使用，不再重复添加前缀。
+    这确保了函数的健壮性和灵活性。
     """
     features = {}
     joint_fts = {key: ftype for key, ftype in hw_features.items() if ftype is float}
     cam_fts = {key: shape for key, shape in hw_features.items() if isinstance(shape, tuple)}
 
+    # ... (处理 joint_fts 的代码保持不变) ...
     if joint_fts and prefix == "action":
-        features[prefix] = {
-            "dtype": "float32",
-            "shape": (len(joint_fts),),
-            "names": list(joint_fts),
-        }
-
+        features[prefix] = {"dtype": "float32", "shape": (len(joint_fts),), "names": list(joint_fts)}
     if joint_fts and prefix == "observation":
-        features[f"{prefix}.state"] = {
-            "dtype": "float32",
-            "shape": (len(joint_fts),),
-            "names": list(joint_fts),
-        }
+        features[f"{prefix}.state"] = {"dtype": "float32", "shape": (len(joint_fts),), "names": list(joint_fts)}
 
     for key, shape in cam_fts.items():
-        # 通过检查形状是否为2D来判断是否为深度图
-        is_depth = len(shape) == 2
-
-        if is_depth:
-            # 为深度图创建特征
-            # 注意：我们仍然使用'video'类型，因为最终它会被编码成视频。
-            # 关键在于键名 "observation.depth.{key}"
-            features[f"observation.depth.{key}"] = {
-                "dtype": "video" if use_video else "image",
-                "shape": shape,
-                "names": ["height", "width"],
-            }
+        # (核心修正) >>>
+        # 如果传入的键名已经是完整的LeRobot格式，直接使用它
+        if key.startswith("observation."):
+            feature_key = key
+        # 否则，我们根据规则为其构建完整的键名
         else:
-            # 原有的RGB图像处理逻辑    
-            features[f"{prefix}.images.{key}"] = {
-                "dtype": "video" if use_video else "image",
-                "shape": shape,
-                "names": ["height", "width", "channels"],
-            }
+            is_depth = len(shape) == 2
+            cam_name = key.removesuffix('_depth')
+            if is_depth:
+                feature_key = f"observation.depth.{cam_name}"
+            else:
+                feature_key = f"observation.images.{cam_name}"
+        # <<< (核心修正)
+        
+        is_depth_final = 'depth' in feature_key
+        
+        features[feature_key] = {
+            "dtype": "video" if use_video else "image",
+            "shape": shape,
+            "names": ["height", "width"] if is_depth_final else ["height", "width", "channels"],
+        }
 
     _validate_feature_names(features)
     return features
@@ -885,15 +874,49 @@ def validate_feature_numpy_array(
 def validate_feature_image_or_video(name: str, expected_shape: list[str], value: np.ndarray | PILImage.Image):
     # Note: The check of pixels range ([0,1] for float and [0,255] for uint8) is done by the image writer threads.
     error_message = ""
-    if isinstance(value, np.ndarray):
-        actual_shape = value.shape
-        c, h, w = expected_shape
-        if len(actual_shape) != 3 or (actual_shape != (c, h, w) and actual_shape != (h, w, c)):
-            error_message += f"The feature '{name}' of shape '{actual_shape}' does not have the expected shape '{(c, h, w)}' or '{(h, w, c)}'.\n"
-    elif isinstance(value, PILImage.Image):
-        pass
+    if not isinstance(value, (np.ndarray, PILImage)):
+        error_message += (
+            f"The feature '{name}' is expected to be a numpy array or a PIL image, but type "
+            f"{type(value)} was provided instead.\\n"
+        )
+        return error_message
+
+    # 适用于3D的RGB图像
+    if len(expected_shape) == 3:
+        # (核心修正) 
+        # 我们已知 expected_shape 已经是正确的 (H, W, C) 格式，因此直接比较。
+        h, w, c = expected_shape
+        if isinstance(value, np.ndarray):
+            if value.shape != expected_shape:
+                error_message += (
+                    f"The feature '{name}' is expected to have shape {expected_shape} (H, W, C), but shape "
+                    f"{value.shape} was provided instead.\\n"
+                )
+        else:  # PIL.Image
+            if (value.height, value.width) != (h, w):
+                error_message += (
+                    f"The feature '{name}' is expected to have shape (height={h}, width={w}), but shape "
+                    f"(height={value.height}, width={value.width}) was provided instead.\\n"
+                )
+                
+    # 适用于2D的深度图
+    elif len(expected_shape) == 2:
+        h, w = expected_shape
+        if isinstance(value, np.ndarray):
+            if value.shape != expected_shape:
+                error_message += (
+                    f"The feature '{name}' (depth) is expected to have shape {expected_shape} (H, W), but shape "
+                    f"{value.shape} was provided instead.\\n"
+                )
+        else:  # PIL.Image
+             if (value.height, value.width) != (h, w):
+                error_message += (
+                    f"The feature '{name}' (depth) is expected to have shape (height={h}, width={w}), but shape "
+                    f"(height={value.height}, width={value.width}) was provided instead.\\n"
+                )
+                
     else:
-        error_message += f"The feature '{name}' is expected to be of type 'PIL.Image' or 'np.ndarray' channel first or channel last, but type '{type(value)}' provided instead.\n"
+        error_message += f"The expected_shape for feature '{name}' is invalid. It should have 2 or 3 dimensions."
 
     return error_message
 
