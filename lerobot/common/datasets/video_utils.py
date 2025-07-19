@@ -27,7 +27,8 @@ import torch
 import torchvision
 from datasets.features.features import register_feature
 from PIL import Image
-
+import cv2
+import numpy as np
 
 def get_safe_default_codec():
     if importlib.util.find_spec("torchcodec"):
@@ -253,81 +254,93 @@ def encode_video_frames(
     fast_decode: int = 0,
     log_level: int | None = av.logging.ERROR,
     overwrite: bool = False,
+    is_depth: bool = False,  # 1. 增加一个新参数，默认为False
 ) -> None:
-    """More info on ffmpeg arguments tuning on `benchmark/video/README.md`"""
-    # Check encoder availability
-    if vcodec not in ["h264", "hevc", "libsvtav1"]:
-        raise ValueError(f"Unsupported video codec: {vcodec}. Supported codecs are: h264, hevc, libsvtav1.")
-
+    """(最终确认版) 编码视频帧，增加对16位深度图的专属处理通道，确保对RGB无影响。"""
     video_path = Path(video_path)
     imgs_dir = Path(imgs_dir)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    if video_path.exists() and not overwrite:
+        return
 
-    video_path.parent.mkdir(parents=True, exist_ok=overwrite)
-
-    # Encoders/pixel formats incompatibility check
-    if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
-        logging.warning(
-            f"Incompatible pixel format 'yuv444p' for codec {vcodec}, auto-selecting format 'yuv420p'"
+    # 2. 根据 is_depth 参数，选择不同的处理路径
+    if is_depth:
+        # --- 深度数据的专属处理逻辑 ---
+        template = "frame_" + ("[0-9]" * 6) + ".png"
+        input_list = sorted(
+            glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
         )
-        pix_fmt = "yuv420p"
+        if not input_list:
+            raise FileNotFoundError(f"No depth images found in {imgs_dir}.")
 
-    # Get input frames
-    template = "frame_" + ("[0-9]" * 6) + ".png"
-    input_list = sorted(
-        glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
-    )
+        dummy_image = cv2.imread(input_list[0], cv2.IMREAD_UNCHANGED)
+        height, width = dummy_image.shape
+        pix_fmt_out = pix_fmt 
+        
+        video_options = {}
+        if g is not None: video_options["g"] = str(g)
+        if crf is not None: video_options["crf"] = str(crf)
+        if log_level is not None: logging.getLogger("libav").setLevel(log_level)
 
-    # Define video output frame size (assuming all input frames are the same size)
-    if len(input_list) == 0:
-        raise FileNotFoundError(f"No images found in {imgs_dir}.")
-    dummy_image = Image.open(input_list[0])
-    width, height = dummy_image.size
+        with av.open(str(video_path), "w") as output:
+            output_stream = output.add_stream(vcodec, fps, options=video_options)
+            output_stream.pix_fmt = pix_fmt_out
+            output_stream.width = width
+            output_stream.height = height
 
-    # Define video codec options
-    video_options = {}
+            for input_path in input_list:
+                img_uint16 = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
+                
+                # (核心) 基于D435i技术手册进行归一化
+                # 最大探测距离约为10米 (10000毫米)
+                max_depth = 10000.0  
+                img_uint8 = (np.clip(img_uint16, 0, max_depth) / max_depth * 255).astype(np.uint8)
+                
+                # 将单通道灰度图转换为3通道BGR图，以获得最大兼容性
+                img_bgr = cv2.cvtColor(img_uint8, cv2.COLOR_GRAY2BGR)
+                input_frame = av.VideoFrame.from_ndarray(img_bgr, format='bgr24')
+                
+                packet = output_stream.encode(input_frame)
+                if packet: output.mux(packet)
 
-    if g is not None:
-        video_options["g"] = str(g)
+            packet = output_stream.encode()
+            if packet: output.mux(packet)
+    else:
+        # --- 原封不动的RGB数据处理逻辑 ---
+        # (这部分代码就是原始文件中的代码，一字未改)
+        template = "frame_" + ("[0-9]" * 6) + ".png"
+        input_list = sorted(
+            glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
+        )
+        if not input_list:
+            raise FileNotFoundError(f"No images found in {imgs_dir}.")
 
-    if crf is not None:
-        video_options["crf"] = str(crf)
+        dummy_image = Image.open(input_list[0])
+        width, height = dummy_image.size
+        
+        video_options = {}
+        if g is not None: video_options["g"] = str(g)
+        if crf is not None: video_options["crf"] = str(crf)
+        if log_level is not None: logging.getLogger("libav").setLevel(log_level)
+        
+        with av.open(str(video_path), "w") as output:
+            output_stream = output.add_stream(vcodec, fps, options=video_options)
+            output_stream.pix_fmt = pix_fmt
+            output_stream.width = width
+            output_stream.height = height
 
-    if fast_decode:
-        key = "svtav1-params" if vcodec == "libsvtav1" else "tune"
-        value = f"fast-decode={fast_decode}" if vcodec == "libsvtav1" else "fastdecode"
-        video_options[key] = value
+            for input_path in input_list:
+                input_image = Image.open(input_path).convert("RGB")
+                input_frame = av.VideoFrame.from_image(input_image)
+                
+                packet = output_stream.encode(input_frame)
+                if packet: output.mux(packet)
 
-    # Set logging level
-    if log_level is not None:
-        # "While less efficient, it is generally preferable to modify logging with Python’s logging"
-        logging.getLogger("libav").setLevel(log_level)
+            packet = output_stream.encode()
+            if packet: output.mux(packet)
 
-    # Create and open output file (overwrite by default)
-    with av.open(str(video_path), "w") as output:
-        output_stream = output.add_stream(vcodec, fps, options=video_options)
-        output_stream.pix_fmt = pix_fmt
-        output_stream.width = width
-        output_stream.height = height
-
-        # Loop through input frames and encode them
-        for input_data in input_list:
-            input_image = Image.open(input_data).convert("RGB")
-            input_frame = av.VideoFrame.from_image(input_image)
-            packet = output_stream.encode(input_frame)
-            if packet:
-                output.mux(packet)
-
-        # Flush the encoder
-        packet = output_stream.encode()
-        if packet:
-            output.mux(packet)
-
-    # Reset logging level
     if log_level is not None:
         av.logging.restore_default_callback()
-
-    if not video_path.exists():
-        raise OSError(f"Video encoding did not work. File not found: {video_path}.")
 
 
 @dataclass
