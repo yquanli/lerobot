@@ -231,8 +231,9 @@ class PiperFollower(Robot):
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
         
+        if self.config.control_mode == "policy":
         # 机械臂回到零位
-        self.back_to_zero()
+            self.back_to_zero() 
 
         # self.robot.DisablePiper()
         self.robot.DisconnectPort()

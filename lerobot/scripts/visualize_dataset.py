@@ -81,7 +81,6 @@ import tqdm
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
-
 class EpisodeSampler(torch.utils.data.Sampler):
     def __init__(self, dataset: LeRobotDataset, episode_index: int):
         from_idx = dataset.episode_data_index["from"][episode_index].item()
@@ -159,6 +158,33 @@ def visualize_dataset(
             for key in dataset.meta.camera_keys:
                 # TODO(rcadene): add `.compress()`? is it lossless?
                 rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
+
+            # --- 新增的深度图像显示逻辑 ---
+            # 1. 找到所有深度相关的键
+            depth_keys = [k for k in batch if k.startswith("observation.depth")]
+            
+            for key in depth_keys:
+                # key is "observation.depth.wrist"
+                # 2. 从batch中获取深度图张量
+                # 它的形状是 (C, H, W)，dtype是float32, 范围是[0.0, 1.0]
+                depth_tensor_chw = batch[key][i]
+                
+                # 3. Rerun的DepthImage需要2D数组，我们从3个相同的通道中选择第1个
+                # depth_tensor_chw[0] 的形状是 (H, W)
+                depth_tensor_hw = depth_tensor_chw[0]
+                depth_uint8_numpy = (depth_tensor_hw * 255).byte().numpy()
+                
+                # 4. 使用 rr.DepthImage 进行记录
+                # Rerun 实体路径将是 "depth/wrist"
+                rerun_entity_path = f"depth/{key.split('.')[-1]}"
+                
+                # 我们告诉Rerun，图像中的值(0-255)代表的物理距离是从0到10000毫米
+                # meter=10000.0 的意思是：图像中的一个单位代表 1/10000 米，即0.1毫米
+                # 这里我们用 meter=10.0，意思是图像中的最大值255代表10米
+                rr.log(
+                    rerun_entity_path,
+                    rr.DepthImage(depth_uint8_numpy, meter=10000.0),
+                )
 
             # display each dimension of action space (e.g. actuators command)
             if "action" in batch:
