@@ -260,7 +260,10 @@ def record_loop(
                 if isinstance(val, float):
                     rr.log(f"observation.{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
-                    rr.log(f"observation.{obs}", rr.Image(val), static=True)
+                    if obs.startswith("observation.images"):
+                        rr.log(f"{obs}", rr.Image(val), static=True)
+                    elif obs.startswith("observation.depth"):
+                        rr.log(f"{obs}", rr.DepthImage(val, meter=10000.0))
             for act, val in action.items():
                 if isinstance(val, float):
                     rr.log(f"action.{act}", rr.Scalar(val))
