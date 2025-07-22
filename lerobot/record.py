@@ -263,7 +263,7 @@ def record_loop(
                     if obs.startswith("observation.images"):
                         rr.log(f"{obs}", rr.Image(val), static=True)
                     elif obs.startswith("observation.depth"):
-                        rr.log(f"{obs}", rr.DepthImage(val, meter=10000.0))
+                        rr.log(f"{obs}", rr.DepthImage(val, meter=10000.0), static=True)
             for act, val in action.items():
                 if isinstance(val, float):
                     rr.log(f"action.{act}", rr.Scalar(val))
