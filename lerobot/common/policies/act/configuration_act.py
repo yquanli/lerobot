@@ -132,7 +132,7 @@ class ACTConfig(PreTrainedConfig):
 
     # Inference.
     # Note: the value used in ACT when temporal ensembling is enabled is 0.01.
-    temporal_ensemble_coeff: float | None = 0.01
+    temporal_ensemble_coeff: float | None = None
 
     # Training and loss computation.
     dropout: float = 0.1
@@ -178,6 +178,16 @@ class ACTConfig(PreTrainedConfig):
     def validate_features(self) -> None:
         if not self.image_features and not self.env_state_feature:
             raise ValueError("You must provide at least one image or the environment state among the inputs.")
+    
+    @property
+    def image_features(self) -> list[str]:
+        """
+        修改: 现在这个属性会返回所有以 'observation.images' 或 'observation.depth' 
+        开头的键，将它们统一处理。
+        """
+        img_keys = [key for key in self.input_features if key.startswith("observation.images")]
+        depth_keys = [key for key in self.input_features if key.startswith("observation.depth")]
+        return img_keys + depth_keys
 
     @property
     def observation_delta_indices(self) -> None:
