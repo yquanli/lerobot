@@ -7,7 +7,6 @@ from typing import Any
 import numpy as np
 import torch
 import threading
-
 # 导入 LeRobot 基类和相机、机器人设备工具
 from ..robot import Robot
 from lerobot.common.cameras.utils import make_cameras_from_configs
@@ -43,6 +42,7 @@ class PiperFollower(Robot):
         # 3. 初始化触觉传感器
         self.xense_0 = Xense(device_id="0G000205")  # 初始化 Xense 传感器
         self.xense_1 = Xense(device_id="0G000206")  # 初始化第二个 Xense 传感器
+        
         # Xense 数据缓存与锁
         self._xense_0_data = None
         self._xense_1_data = None
@@ -180,14 +180,13 @@ class PiperFollower(Robot):
         """
         # 目前看来没什么要执行的
         raise NotImplementedError("Piper Follower does not require configuration in code.")
-    
+
     def _xense_loop(self, xense: Xense, cache_attr: str, lock: threading.Lock):
         while True:
             xense.run()
             with lock:
-                setattr(self, cache_attr, xense.read_data())
-
-
+             setattr(self, cache_attr, xense.read_data())
+             
     def get_observation(self) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected")
@@ -278,6 +277,9 @@ class PiperFollower(Robot):
         obs_dict["xense_1_mesh_now"] = xense_1_mesh_now    # (35, 20, 3)
         obs_dict["xense_1_mesh_flow"] = xense_1_mesh_flow  # (35, 20, 3)
 
+        with open("observation.txt", "w") as f:
+            for key, value in obs_dict.items():
+                 f.write(f"{key}: {np.array(value).tolist()}\n")
         return obs_dict
     
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
