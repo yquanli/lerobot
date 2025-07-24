@@ -452,30 +452,6 @@ class RealSenseCamera(Camera):
 
         return processed_image
 
-    # def _read_loop(self):
-    #     """
-    #     Internal loop run by the background thread for asynchronous reading.
-
-    #     On each iteration:
-    #     1. Reads a color frame with 500ms timeout
-    #     2. Stores result in latest_frame (thread-safe)
-    #     3. Sets new_frame_event to notify listeners
-
-    #     Stops on DeviceNotConnectedError, logs other errors and continues.
-    #     """
-    #     while not self.stop_event.is_set():
-    #         try:
-    #             color_image = self.read(timeout_ms=500)
-
-    #             with self.frame_lock:
-    #                 self.latest_frame = color_image
-    #             self.new_frame_event.set()
-
-    #         except DeviceNotConnectedError:
-    #             break
-    #         except Exception as e:
-    #             logger.warning(f"Error reading frame in background thread for {self}: {e}")
-
     def _read_loop(self):
         """
         Internal loop run by the background thread for asynchronous reading.

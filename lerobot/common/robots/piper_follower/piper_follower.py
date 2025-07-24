@@ -87,7 +87,7 @@ class PiperFollower(Robot):
             # 新增：深度图像特征
             if cam_config.use_depth:
                 # 深度图是单通道的 (H, W)
-                camera_features[f"observation.depth.{cam_name}"] = (cam_config.height, cam_config.width)
+                camera_features[f"observation.depth.{cam_name}"] = (cam_config.height, cam_config.width, 3)
 
 
         # 合并所有特征到一个字典中
@@ -179,7 +179,18 @@ class PiperFollower(Robot):
             # 读取rgb图像
             obs_dict[f"observation.images.{cam_key}"] = cam.async_read() # 使用同步读取以保证与深度图对齐
             if cam.use_depth:
-                obs_dict[f"observation.depth.{cam_key}"] = cam.async_read_depth() #TODO：跟着gemini改成异步深度读取
+                # 1. 读取原始的、单通道的2D深度图
+                depth_2d = cam.async_read_depth() 
+
+                # 2. (核心修改) 将2D深度图实时转换为3D“伪三通道”图像
+                #    这里我们直接将单通道堆叠3次，这是最高效、最直接的方式
+                if depth_2d is not None and depth_2d.ndim == 2:
+                    depth_3d = np.stack((depth_2d,) * 3, axis=-1)
+                    obs_dict[f"observation.depth.{cam_key}"] = depth_3d
+                else:
+                    # 如果数据已经是3D或为None，则直接使用
+                    obs_dict[f"observation.depth.{cam_key}"] = depth_2d
+
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
         

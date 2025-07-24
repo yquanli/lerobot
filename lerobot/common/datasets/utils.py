@@ -420,45 +420,29 @@ def _validate_feature_names(features: dict[str, dict]) -> None:
 def hw_to_dataset_features(
     hw_features: dict[str, type | tuple], prefix: str, use_video: bool = True
 ) -> dict[str, dict]:
-    """
-    (最终健壮版)
-    将硬件特征转换为LeRobot数据集的标准特征定义。
-    此版本能智能处理两种输入键名：
-    1. 简单键名 (如 'wrist', 'wrist_depth'): 会为其自动添加标准前缀。
-    2. 完整的LeRobot标准键名 (如 'observation.images.wrist'): 会直接使用，不再重复添加前缀。
-    这确保了函数的健壮性和灵活性。
-    """
+    
     features = {}
     joint_fts = {key: ftype for key, ftype in hw_features.items() if ftype is float}
     cam_fts = {key: shape for key, shape in hw_features.items() if isinstance(shape, tuple)}
 
-    # ... (处理 joint_fts 的代码保持不变) ...
     if joint_fts and prefix == "action":
-        features[prefix] = {"dtype": "float32", "shape": (len(joint_fts),), "names": list(joint_fts)}
+        features[prefix] = {
+            "dtype": "float32", 
+            "shape": (len(joint_fts),), 
+            "names": list(joint_fts)
+            }
     if joint_fts and prefix == "observation":
-        features[f"{prefix}.state"] = {"dtype": "float32", "shape": (len(joint_fts),), "names": list(joint_fts)}
+        features[f"{prefix}.state"] = {
+            "dtype": "float32", 
+            "shape": (len(joint_fts),), 
+            "names": list(joint_fts)
+            }
 
     for key, shape in cam_fts.items():
-        # (核心修正) >>>
-        # 如果传入的键名已经是完整的LeRobot格式，直接使用它
-        if key.startswith("observation."):
-            feature_key = key
-        # 否则，我们根据规则为其构建完整的键名
-        else:
-            is_depth = len(shape) == 2
-            cam_name = key.removesuffix('_depth')
-            if is_depth:
-                feature_key = f"observation.depth.{cam_name}"
-            else:
-                feature_key = f"observation.images.{cam_name}"
-        # <<< (核心修正)
-        
-        is_depth_final = 'depth' in feature_key
-        
-        features[feature_key] = {
+        features[key] = {
             "dtype": "video" if use_video else "image",
             "shape": shape,
-            "names": ["height", "width"] if is_depth_final else ["height", "width", "channels"],
+            "names": ["height", "width", "channels"],
         }
 
     _validate_feature_names(features)

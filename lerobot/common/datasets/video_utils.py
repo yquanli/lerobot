@@ -262,29 +262,27 @@ def encode_video_frames(
     video_path.parent.mkdir(parents=True, exist_ok=True)
     if video_path.exists() and not overwrite:
         return
-
+    
+    # --- 通用设置 ---
+    template = "frame_" + ("[0-9]" * 6) + ".png"
+    input_list = sorted(
+        glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
+    )
+    if not input_list:
+        raise FileNotFoundError(f"No depth images found in {imgs_dir}.")
+    
+    video_options = {}
+    if g is not None: video_options["g"] = str(g)
+    if crf is not None: video_options["crf"] = str(crf)
+    if log_level is not None: logging.getLogger("libav").setLevel(log_level)
     # 2. 根据 is_depth 参数，选择不同的处理路径
     if is_depth:
-        # --- 深度数据的专属处理逻辑 ---
-        template = "frame_" + ("[0-9]" * 6) + ".png"
-        input_list = sorted(
-            glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
-        )
-        if not input_list:
-            raise FileNotFoundError(f"No depth images found in {imgs_dir}.")
-
         dummy_image = cv2.imread(input_list[0], cv2.IMREAD_UNCHANGED)
-        height, width = dummy_image.shape
-        pix_fmt_out = pix_fmt 
-        
-        video_options = {}
-        if g is not None: video_options["g"] = str(g)
-        if crf is not None: video_options["crf"] = str(crf)
-        if log_level is not None: logging.getLogger("libav").setLevel(log_level)
+        height, width, _ = dummy_image.shape
 
         with av.open(str(video_path), "w") as output:
             output_stream = output.add_stream(vcodec, fps, options=video_options)
-            output_stream.pix_fmt = pix_fmt_out
+            output_stream.pix_fmt = pix_fmt
             output_stream.width = width
             output_stream.height = height
 
@@ -297,8 +295,8 @@ def encode_video_frames(
                 img_uint8 = (np.clip(img_uint16, 0, max_depth) / max_depth * 255).astype(np.uint8)
                 
                 # 将单通道灰度图转换为3通道BGR图，以获得最大兼容性
-                img_bgr = cv2.cvtColor(img_uint8, cv2.COLOR_GRAY2BGR)
-                input_frame = av.VideoFrame.from_ndarray(img_bgr, format='bgr24')
+                # img_bgr = cv2.cvtColor(img_uint8, cv2.COLOR_GRAY2BGR)
+                input_frame = av.VideoFrame.from_ndarray(img_uint8, format='bgr24')
                 
                 packet = output_stream.encode(input_frame)
                 if packet: output.mux(packet)
@@ -308,20 +306,9 @@ def encode_video_frames(
     else:
         # --- 原封不动的RGB数据处理逻辑 ---
         # (这部分代码就是原始文件中的代码，一字未改)
-        template = "frame_" + ("[0-9]" * 6) + ".png"
-        input_list = sorted(
-            glob.glob(str(imgs_dir / template)), key=lambda x: int(x.split("_")[-1].split(".")[0])
-        )
-        if not input_list:
-            raise FileNotFoundError(f"No images found in {imgs_dir}.")
 
         dummy_image = Image.open(input_list[0])
         width, height = dummy_image.size
-        
-        video_options = {}
-        if g is not None: video_options["g"] = str(g)
-        if crf is not None: video_options["crf"] = str(crf)
-        if log_level is not None: logging.getLogger("libav").setLevel(log_level)
         
         with av.open(str(video_path), "w") as output:
             output_stream = output.add_stream(vcodec, fps, options=video_options)

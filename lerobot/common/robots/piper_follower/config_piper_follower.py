@@ -38,7 +38,7 @@ class PiperFollowerConfig(RobotConfig):
             fps = 30,
             width = 640,
             height = 480,
-            use_depth = True,
+            use_depth = False,
         )
     })
     
