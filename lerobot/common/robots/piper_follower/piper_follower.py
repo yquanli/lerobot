@@ -18,7 +18,7 @@ from .piper_utils import get_piper_sdk_instance
 
 # 导入我们之前定义好的配置类
 from lerobot.common.robots.piper_follower.config_piper_follower import PiperFollowerConfig
-
+from lerobot.common.robots.piper_follower.xense_data  import Xense
 logger = logging.getLogger(__name__)
 
 class PiperFollower(Robot):
@@ -34,11 +34,15 @@ class PiperFollower(Robot):
         # 1. 初始化机械臂 SDK
         self.config = config
         self.robot = get_piper_sdk_instance()  # 获取全局唯一的 Piper SDK 实例
-
+        
         # 2. 初始化相机
         # 根据配置实例化相机对象
         self.cameras = make_cameras_from_configs(config.cameras)
 
+        # 3. 初始化触觉传感器
+        self.xense_0 = Xense(device_id="0G000205")  # 初始化 Xense 传感器
+        self.xense_1 = Xense(device_id="0G000206")  # 初始化第二个 Xense 传感器
+        
         # 机械臂物理参数
         self.num_joints = 6
         self.gripper_range_mm = [0.0, 70.0]  # 物理开合范围
@@ -88,9 +92,22 @@ class PiperFollower(Robot):
             # 深度图像特征
             if cam_config.use_depth:
                 camera_features[f"{cam_name}_depth"] = (cam_config.height, cam_config.width, 1)
-
+                
+        # 定义 Xense 传感器的特征
+        xense_features = {
+            "xense_rectify": (700, 400, 3),
+            "xense_diff": (700, 400, 3),
+            "xense_depth": (700, 400, 1),
+            "xense_force": (35, 20, 3),
+            "xense_force_norm": (35, 20, 3),
+            "xense_force_resultant": (6,),
+            "xense_mesh_init": (35, 20, 3),
+            "xense_mesh_now": (35, 20, 3),
+            "xense_mesh_flow": (35, 20, 3),
+        }
+        
         # 合并所有特征到一个字典中
-        return {**motor_and_pose_features, **camera_features}
+        return {**motor_and_pose_features, **camera_features,**xense_features}
 
     @property
     def action_features(self) -> dict:
@@ -183,7 +200,54 @@ class PiperFollower(Robot):
                 obs_dict[f"{cam_key}_depth"] = depth_image #TODO：跟着gemini改成异步深度读取
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
+            
+        #读取Xense传感器数据
+        self.xense_0.run()  # 更新一帧
+        self.xense_1.run()  # 更新一帧
+        (
+            xense_0_diff,
+            xense_0_rectify,
+            xense_0_depth,
+            xense_0_force,
+            xense_0_force_norm,
+            xense_0_force_resultant,
+            xense_0_mesh_init,
+            xense_0_mesh_now,
+            xense_0_mesh_flow
+        ) = self.xense_0.read_data()
+
+        (
+            xense_1_diff,
+            xense_1_rectify,
+            xense_1_depth,
+            xense_1_force,
+            xense_1_force_norm,
+            xense_1_force_resultant,
+            xense_1_mesh_init,
+            xense_1_mesh_now,
+            xense_1_mesh_flow
+        ) = self.xense_1.read_data()
+
+        obs_dict["xense_0_rectify"] = xense_0_rectify  # (700, 400, 3)
+        obs_dict["xense_0_diff"] = xense_0_diff  # (700, 400, 3)
+        obs_dict["xense_0_depth"] = xense_0_depth  # (700, 400, 1)
+        obs_dict["xense_0_force"] = xense_0_force  # (35, 20, 3)
+        obs_dict["xense_0_force_norm"] = xense_0_force_norm  # (35, 20, 3)
+        obs_dict["xense_0_force_resultant"] = xense_0_force_resultant  # (6,)
+        obs_dict["xense_0_mesh_init"] = xense_0_mesh_init  # (35, 20, 3)
+        obs_dict["xense_0_mesh_now"] = xense_0_mesh_now    # (35, 20, 3)
+        obs_dict["xense_0_mesh_flow"] = xense_0_mesh_flow  # (35, 20, 3)
         
+        obs_dict["xense_1_rectify"] = xense_1_rectify  # (700, 400, 3)
+        obs_dict["xense_1_diff"] = xense_1_diff  # (700, 400, 3)
+        obs_dict["xense_1_depth"] = xense_1_depth  # (700, 400, 1)
+        obs_dict["xense_1_force"] = xense_1_force  # (35, 20, 3)
+        obs_dict["xense_1_force_norm"] = xense_1_force_norm  # (35, 20, 3)
+        obs_dict["xense_1_force_resultant"] = xense_1_force_resultant  # (6,)
+        obs_dict["xense_1_mesh_init"] = xense_1_mesh_init  # (35, 20, 3)
+        obs_dict["xense_1_mesh_now"] = xense_1_mesh_now    # (35, 20, 3)
+        obs_dict["xense_1_mesh_flow"] = xense_1_mesh_flow  # (35, 20, 3)
+
         return obs_dict
     
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
