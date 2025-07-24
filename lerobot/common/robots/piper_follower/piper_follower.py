@@ -6,6 +6,7 @@ from functools import cached_property
 from typing import Any
 import numpy as np
 import torch
+import threading
 
 # 导入 LeRobot 基类和相机、机器人设备工具
 from ..robot import Robot
@@ -42,6 +43,15 @@ class PiperFollower(Robot):
         # 3. 初始化触觉传感器
         self.xense_0 = Xense(device_id="0G000205")  # 初始化 Xense 传感器
         self.xense_1 = Xense(device_id="0G000206")  # 初始化第二个 Xense 传感器
+        # Xense 数据缓存与锁
+        self._xense_0_data = None
+        self._xense_1_data = None
+        self._xense_0_lock = threading.Lock()
+        self._xense_1_lock = threading.Lock()
+
+        threading.Thread(target=self._xense_loop, args=(self.xense_0, "_xense_0_data", self._xense_0_lock), daemon=True).start()
+        threading.Thread(target=self._xense_loop, args=(self.xense_1, "_xense_1_data", self._xense_1_lock), daemon=True).start()
+
         
         # 机械臂物理参数
         self.num_joints = 6
@@ -95,17 +105,26 @@ class PiperFollower(Robot):
                 
         # 定义 Xense 传感器的特征
         xense_features = {
-            "xense_rectify": (700, 400, 3),
-            "xense_diff": (700, 400, 3),
-            "xense_depth": (700, 400, 1),
-            "xense_force": (35, 20, 3),
-            "xense_force_norm": (35, 20, 3),
-            "xense_force_resultant": (6,),
-            "xense_mesh_init": (35, 20, 3),
-            "xense_mesh_now": (35, 20, 3),
-            "xense_mesh_flow": (35, 20, 3),
+            "xense_0_rectify": (700, 400, 3),
+            "xense_0_diff": (700, 400, 3),
+            "xense_0_depth": (700, 400, 1),
+            "xense_0_force": (35, 20, 3),
+            "xense_0_force_norm": (35, 20, 3),
+            "xense_0_force_resultant": (6,),
+            "xense_0_mesh_init": (35, 20, 3),
+            "xense_0_mesh_now": (35, 20, 3),
+            "xense_0_mesh_flow": (35, 20, 3),
+            "xense_1_rectify": (700, 400, 3),
+            "xense_1_diff": (700, 400, 3),
+            "xense_1_depth": (700, 400, 1),
+            "xense_1_force": (35, 20, 3),
+            "xense_1_force_norm": (35, 20, 3),
+            "xense_1_force_resultant": (6,),
+            "xense_1_mesh_init": (35, 20, 3),
+            "xense_1_mesh_now": (35, 20, 3),
+            "xense_1_mesh_flow": (35, 20, 3),
         }
-        
+
         # 合并所有特征到一个字典中
         return {**motor_and_pose_features, **camera_features,**xense_features}
 
@@ -161,6 +180,13 @@ class PiperFollower(Robot):
         """
         # 目前看来没什么要执行的
         raise NotImplementedError("Piper Follower does not require configuration in code.")
+    
+    def _xense_loop(self, xense: Xense, cache_attr: str, lock: threading.Lock):
+        while True:
+            xense.run()
+            with lock:
+                setattr(self, cache_attr, xense.read_data())
+
 
     def get_observation(self) -> dict[str, Any]:
         if not self.is_connected:
@@ -200,33 +226,37 @@ class PiperFollower(Robot):
                 obs_dict[f"{cam_key}_depth"] = depth_image #TODO：跟着gemini改成异步深度读取
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
-            
-        #读取Xense传感器数据
-        self.xense_0.run()  # 更新一帧
-        self.xense_1.run()  # 更新一帧
-        (
-            xense_0_diff,
-            xense_0_rectify,
-            xense_0_depth,
-            xense_0_force,
-            xense_0_force_norm,
-            xense_0_force_resultant,
-            xense_0_mesh_init,
-            xense_0_mesh_now,
-            xense_0_mesh_flow
-        ) = self.xense_0.read_data()
+        
+        with self._xense_0_lock:
+            x0_data = self._xense_0_data
+        with self._xense_1_lock:
+            x1_data = self._xense_1_data
 
-        (
-            xense_1_diff,
-            xense_1_rectify,
-            xense_1_depth,
-            xense_1_force,
-            xense_1_force_norm,
-            xense_1_force_resultant,
-            xense_1_mesh_init,
-            xense_1_mesh_now,
-            xense_1_mesh_flow
-        ) = self.xense_1.read_data()
+        if x0_data is not None:
+            (
+                xense_0_diff,
+                xense_0_rectify,
+                xense_0_depth,
+                xense_0_force,
+                xense_0_force_norm,
+                xense_0_force_resultant,
+                xense_0_mesh_init,
+                xense_0_mesh_now,
+                xense_0_mesh_flow
+            ) = x0_data
+
+        if x1_data is not None:
+            (
+                xense_1_diff,
+                xense_1_rectify,
+                xense_1_depth,
+                xense_1_force,
+                xense_1_force_norm,
+                xense_1_force_resultant,
+                xense_1_mesh_init,
+                xense_1_mesh_now,
+                xense_1_mesh_flow
+            ) = x1_data
 
         obs_dict["xense_0_rectify"] = xense_0_rectify  # (700, 400, 3)
         obs_dict["xense_0_diff"] = xense_0_diff  # (700, 400, 3)
@@ -303,5 +333,6 @@ class PiperFollower(Robot):
         self.robot.DisconnectPort()
         for cam in self.cameras.values():
             cam.disconnect()
+
 
         logger.info(f"{self} disconnected.")

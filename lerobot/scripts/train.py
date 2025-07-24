@@ -237,7 +237,7 @@ def train(cfg: TrainPipelineConfig):
         )
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
-        # increment `step` here.
+        # increment `step` here.d
         step += 1
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
