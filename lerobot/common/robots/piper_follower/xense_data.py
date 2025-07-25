@@ -68,7 +68,6 @@ class Xense:
         )
 
     def run(self):
-        try:
             diff, rectify, depth, force, force_norm, force_res, mesh_init, mesh_now, mesh_flow = self.sensor.selectSensorInfo(
             Sensor.OutputType.Difference,
             Sensor.OutputType.Rectify,
@@ -89,77 +88,63 @@ class Xense:
             self.latest_mesh_init = mesh_init
             self.latest_mesh_now = mesh_now
             self.latest_mesh_flow = mesh_flow
-        finally:
-            self.sensor.release()
-            sys.exit()
+        
             
-def _xense_loop(self, xense: Xense, cache_attr: str, lock: threading.Lock):
-        while True:
-            xense.run()
-            with lock:
-                setattr(self, cache_attr, xense.read_data())
+
     
 if __name__ == '__main__':
+    
     xense_0=Xense()
     xense_1=Xense(device_id="OG000203")
-    _xense_0_data = None
-    _xense_1_data = None
-    _xense_0_lock = threading.Lock()
-    _xense_1_lock = threading.Lock()
+    while(True):
+        xense_0.run()
+        xense_1.run()
+        print(xense_0.read_data())
+        print(xense_1.read_data())
+    #     (
+    #     xense_0_diff,
+    #     xense_0_rectify,
+    #     xense_0_depth,
+    #     xense_0_force,
+    #     xense_0_force_norm,
+    #     xense_0_force_resultant,
+    #     xense_0_mesh_init,
+    #     xense_0_mesh_now,
+    #     xense_0_mesh_flow
+    #   ) = xense_0.read_data()
+    
+    #     (
+    #     xense_1_diff,
+    #     xense_1_rectify,
+    #     xense_1_depth,
+    #     xense_1_force,
+    #     xense_1_force_norm,
+    #     xense_1_force_resultant,
+    #     xense_1_mesh_init,
+    #     xense_1_mesh_now,
+    #     xense_1_mesh_flow
+    #   ) = xense_1.read_data()
 
-    threading.Thread(target=_xense_loop, args=(xense_0, "_xense_0_data", _xense_0_lock), daemon=True).start()
-    threading.Thread(target=_xense_loop, args=(xense_1, "_xense_1_data", _xense_1_lock), daemon=True).start()
-   
-    with _xense_0_lock:
-        x0_data = _xense_0_data
-    with _xense_1_lock:
-        x1_data = _xense_1_data
-        
-    if x0_data is not None:
-     (
-        xense_0_diff,
-        xense_0_rectify,
-        xense_0_depth,
-        xense_0_force,
-        xense_0_force_norm,
-        xense_0_force_resultant,
-        xense_0_mesh_init,
-        xense_0_mesh_now,
-        xense_0_mesh_flow
-     ) = x0_data
+#    obs_dict["xense_0_rectify"] = xense_0_rectify  # (700, 400, 3)
+# obs_dict["xense_0_diff"] = xense_0_diff  # (700, 400, 3)
+# obs_dict["xense_0_depth"] = xense_0_depth  # (700, 400, 1)
+# obs_dict["xense_0_force"] = xense_0_force  # (35, 20, 3)
+#                 obs_dict["xense_0_force_norm"] = xense_0_force_norm  # (35, 20, 3)
+#                 obs_dict["xense_0_force_resultant"] = xense_0_force_resultant  # (6,)
+#                 obs_dict["xense_0_mesh_init"] = xense_0_mesh_init  # (35, 20, 3)
+#                 obs_dict["xense_0_mesh_now"] = xense_0_mesh_now    # (35, 20, 3)
+#                 obs_dict["xense_0_mesh_flow"] = xense_0_mesh_flow  # (35, 20, 3)
 
-    if x1_data is not None:
-            (
-                xense_1_diff,
-                xense_1_rectify,
-                xense_1_depth,
-                xense_1_force,
-                xense_1_force_norm,
-                xense_1_force_resultant,
-                xense_1_mesh_init,
-                xense_1_mesh_now,
-                xense_1_mesh_flow
-            ) = x1_data
+#                 obs_dict["xense_1_rectify"] = xense_1_rectify  # (700, 400, 3)
+#                 obs_dict["xense_1_diff"] = xense_1_diff  # (700, 400, 3)
+#                 obs_dict["xense_1_depth"] = xense_1_depth  # (700, 400, 1)
+#                 obs_dict["xense_1_force"] = xense_1_force  # (35, 20, 3)
+#                 obs_dict["xense_1_force_norm"] = xense_1_force_norm  # (35, 20, 3)
+#                 obs_dict["xense_1_force_resultant"] = xense_1_force_resultant  # (6,)
+#                 obs_dict["xense_1_mesh_init"] = xense_1_mesh_init  # (35, 20, 3)
+#                 obs_dict["xense_1_mesh_now"] = xense_1_mesh_now    # (35, 20, 3)
+#                 obs_dict["xense_1_mesh_flow"] = xense_1_mesh_flow  # (35, 20, 3)
 
-    # obs_dict["xense_0_rectify"] = xense_0_rectify  # (700, 400, 3)
-    # obs_dict["xense_0_diff"] = xense_0_diff  # (700, 400, 3)
-    # obs_dict["xense_0_depth"] = xense_0_depth  # (700, 400, 1)
-    #                 obs_dict["xense_0_force"] = xense_0_force  # (35, 20, 3)
-    #                 obs_dict["xense_0_force_norm"] = xense_0_force_norm  # (35, 20, 3)
-    #                 obs_dict["xense_0_force_resultant"] = xense_0_force_resultant  # (6,)
-    #                 obs_dict["xense_0_mesh_init"] = xense_0_mesh_init  # (35, 20, 3)
-    #                 obs_dict["xense_0_mesh_now"] = xense_0_mesh_now    # (35, 20, 3)
-    #                 obs_dict["xense_0_mesh_flow"] = xense_0_mesh_flow  # (35, 20, 3)
-                    
-    #                 obs_dict["xense_1_rectify"] = xense_1_rectify  # (700, 400, 3)
-    #                 obs_dict["xense_1_diff"] = xense_1_diff  # (700, 400, 3)
-    #                 obs_dict["xense_1_depth"] = xense_1_depth  # (700, 400, 1)
-    #                 obs_dict["xense_1_force"] = xense_1_force  # (35, 20, 3)
-    #                 obs_dict["xense_1_force_norm"] = xense_1_force_norm  # (35, 20, 3)
-    #                 obs_dict["xense_1_force_resultant"] = xense_1_force_resultant  # (6,)
-    #                 obs_dict["xense_1_mesh_init"] = xense_1_mesh_init  # (35, 20, 3)
-    #                 obs_dict["xense_1_mesh_now"] = xense_1_mesh_now    # (35, 20, 3)
-    #                 obs_dict["xense_1_mesh_flow"] = xense_1_mesh_flow  # (35, 20, 3)
 
     #     with open("observation.txt", "w") as f:
     #         for key, value in obs_dict.items():

@@ -43,14 +43,7 @@ class PiperFollower(Robot):
         self.xense_0 = Xense(device_id="0G000205")  # 初始化 Xense 传感器
         self.xense_1 = Xense(device_id="0G000206")  # 初始化第二个 Xense 传感器
         
-        # Xense 数据缓存与锁
-        self._xense_0_data = None
-        self._xense_1_data = None
-        self._xense_0_lock = threading.Lock()
-        self._xense_1_lock = threading.Lock()
 
-        threading.Thread(target=self._xense_loop, args=(self.xense_0, "_xense_0_data", self._xense_0_lock), daemon=True).start()
-        threading.Thread(target=self._xense_loop, args=(self.xense_1, "_xense_1_data", self._xense_1_lock), daemon=True).start()
 
         
         # 机械臂物理参数
@@ -181,11 +174,7 @@ class PiperFollower(Robot):
         # 目前看来没什么要执行的
         raise NotImplementedError("Piper Follower does not require configuration in code.")
 
-    def _xense_loop(self, xense: Xense, cache_attr: str, lock: threading.Lock):
-        while True:
-            xense.run()
-            with lock:
-             setattr(self, cache_attr, xense.read_data())
+
              
     def get_observation(self) -> dict[str, Any]:
         if not self.is_connected:
@@ -226,36 +215,32 @@ class PiperFollower(Robot):
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
         
-        with self._xense_0_lock:
-            x0_data = self._xense_0_data
-        with self._xense_1_lock:
-            x1_data = self._xense_1_data
+        
+        self.xense_0.run()
+        self.xense_1.run()
+        (
+        xense_0_diff,
+        xense_0_rectify,
+        xense_0_depth,
+        xense_0_force,
+        xense_0_force_norm,
+        xense_0_force_resultant,
+        xense_0_mesh_init,
+        xense_0_mesh_now,
+        xense_0_mesh_flow
+        ) = self.xense_0.read_data()
 
-        if x0_data is not None:
-            (
-                xense_0_diff,
-                xense_0_rectify,
-                xense_0_depth,
-                xense_0_force,
-                xense_0_force_norm,
-                xense_0_force_resultant,
-                xense_0_mesh_init,
-                xense_0_mesh_now,
-                xense_0_mesh_flow
-            ) = x0_data
-
-        if x1_data is not None:
-            (
-                xense_1_diff,
-                xense_1_rectify,
-                xense_1_depth,
-                xense_1_force,
-                xense_1_force_norm,
-                xense_1_force_resultant,
-                xense_1_mesh_init,
-                xense_1_mesh_now,
-                xense_1_mesh_flow
-            ) = x1_data
+        (
+        xense_1_diff,
+        xense_1_rectify,
+        xense_1_depth,
+        xense_1_force,
+        xense_1_force_norm,
+        xense_1_force_resultant,
+        xense_1_mesh_init,
+        xense_1_mesh_now,
+        xense_1_mesh_flow
+        ) = self.xense_1.read_data()
 
         obs_dict["xense_0_rectify"] = xense_0_rectify  # (700, 400, 3)
         obs_dict["xense_0_diff"] = xense_0_diff  # (700, 400, 3)
