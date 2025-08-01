@@ -49,7 +49,7 @@ python -m lerobot.record \
 ```
 
 ```shell
-#② Run inference and evaluate the policy.
+#② Run inference and evaluate the policy: ACT.
 python -m lerobot.record \
     --robot.type=piper_follower \
     --robot.id=02 \
@@ -59,6 +59,19 @@ python -m lerobot.record \
     --policy.path=outputs/train/act_piper_test/checkpoints/last/pretrained_model \
     --display_data=true
 ```
+
+```shell
+#③ Run inference and evaluate the policy: SmolVLA.
+python -m lerobot.record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --robot.control_mode=policy \
+    --dataset.repo_id=Sprinng/eval_act_test \
+    --dataset.single_task="Grab the rag" \
+    --policy.path=outputs/train/act_piper_test/checkpoints/last/pretrained_model \
+    --display_data=true
+```
+
 """
 
 import logging
