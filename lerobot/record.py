@@ -128,6 +128,38 @@ from lerobot.common.utils.visualization_utils import _init_rerun
 from lerobot.configs import parser
 from lerobot.configs.policies import PreTrainedConfig
 
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
+from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
+from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+import torch
+from lerobot.common.policies.normalize import Normalize, Unnormalize
+
+def _inject_normalization_stats(policy: SmolVLAPolicy, ref_repo_id: str = "Sprinng/eval_act_stack_cube_test", device:torch.device | str = "cpu"):
+    """
+    Manually inject normalization statistics into the policy from a reference dataset.
+    This is a workaround for pretrained models that don't have stats correctly loaded.
+    """
+    print(f"INFO: Loading reference dataset '{ref_repo_id}' to get normalization stats...")
+    # We only need the metadata, so we can load a small part of the dataset.
+    ref_dataset = LeRobotDataset(ref_repo_id)
+    dataset_meta = ref_dataset.meta
+
+    stats = {}
+    for key, stat_dict in dataset_meta.stats.items():
+        stats[key] = {
+            # 关键修改：在创建张量后，立即将其发送到正确的设备
+            stat_type: torch.from_numpy(stat_array).to(device) if isinstance(stat_array, np.ndarray) else stat_array
+            for stat_type, stat_array in stat_dict.items()
+        }
+    
+    # Recreate and replace the normalization layers on the policy
+    policy.normalize_inputs = Normalize(policy.config.input_features, policy.config.normalization_mapping, stats)
+    policy.normalize_targets = Normalize(policy.config.output_features, policy.config.normalization_mapping, stats)
+    policy.unnormalize_outputs = Unnormalize(policy.config.output_features, policy.config.normalization_mapping, stats)
+    
+    print("✅ INFO: Normalization layers successfully recreated with dataset stats.")
+    # Clean up to free memory
+    del ref_dataset
 
 @dataclass
 class DatasetRecordConfig:
@@ -326,6 +358,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
 
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
+
+    if cfg.policy.pretrained_path and "/" in cfg.policy.pretrained_path:
+        print(f"INFO: Pretrained model '{cfg.policy.pretrained_path}' detected. Applying normalization stats fix.")
+        # ref_repo_id 可以根据你的 smolvla 模型基础来修改，'lerobot/pusht' 是一个安全的选择
+        _inject_normalization_stats(policy,device=policy.config.device)
 
     robot.connect()
     if teleop is not None:
