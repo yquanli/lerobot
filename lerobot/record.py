@@ -359,10 +359,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
 
-    if cfg.policy.pretrained_path and "/" in cfg.policy.pretrained_path:
-        print(f"INFO: Pretrained model '{cfg.policy.pretrained_path}' detected. Applying normalization stats fix.")
-        # ref_repo_id 可以根据你的 smolvla 模型基础来修改，'lerobot/pusht' 是一个安全的选择
-        _inject_normalization_stats(policy,device=policy.config.device)
+    if policy is not None:
+        if cfg.policy.pretrained_path and "/" in cfg.policy.pretrained_path:
+            print(f"INFO: Pretrained model '{cfg.policy.pretrained_path}' detected. Applying normalization stats fix.")
+            # ref_repo_id 可以根据你的 smolvla 模型基础来修改，'lerobot/pusht' 是一个安全的选择
+            _inject_normalization_stats(policy,device=policy.config.device)
 
     robot.connect()
     if teleop is not None:
