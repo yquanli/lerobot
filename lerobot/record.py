@@ -66,9 +66,9 @@ python -m lerobot.record \
     --robot.type=piper_follower \
     --robot.id=02 \
     --robot.control_mode=policy \
-    --dataset.repo_id=Sprinng/eval_act_test \
-    --dataset.single_task="Grab the rag" \
-    --policy.path=outputs/train/act_piper_test/checkpoints/last/pretrained_model \
+    --dataset.repo_id=Sprinng/eval_smolvla_stack_test \
+    --dataset.single_task="Stack left cube on the right one" \
+    --policy.path=outputs/train/smolvla_50/checkpoints/last/pretrained_model \
     --display_data=true
 ```
 
