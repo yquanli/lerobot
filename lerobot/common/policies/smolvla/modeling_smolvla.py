@@ -323,6 +323,68 @@ def aloha_gripper_from_angular_inv(value):
     return normalize(value, min_val=0.4, max_val=1.5)
 
 
+# ===== Piper adapter constants =====
+# 需要符号翻转的关节索引（若 Piper 与模型约定坐标相反则填写）
+PIPER_JOINT_FLIPS: list[int] = [4]  # 例如: [1, 2]
+
+# 夹爪通道索引（单臂通常是 6）
+PIPER_GRIPPER_IDXS: list[int] = [6]
+
+# Piper 运行时夹爪表示空间：
+# - "linear_m": 米制开口宽度（与 piper_param_manager.gripper_range 一致）
+# - "micrometers": 微米整数（demo: GripperCtrl(abs(range_m*1e6), ...)
+# - "linear_norm": 归一化到 [0,1] 的开口宽度
+PIPER_GRIPPER_SPACE: str = "linear_m"
+
+# Piper 夹爪线性开口范围（米）
+PIPER_GRIPPER_LINEAR_MIN: float = 0.0
+PIPER_GRIPPER_LINEAR_MAX: float = 70.0
+
+# 模型内部预训练所用的“夹爪开合归一化”目标区间仍为 [0,1]，
+# 若你希望与 Aloha 的角度范围保持对应关系，可把 [0,1] 视为“开合比例”，无需几何换算
+SMOLVLA_GRIPPER_NORM_MIN: float = 0.0
+SMOLVLA_GRIPPER_NORM_MAX: float = 1.0
+# ===================================
+
+
+def piper_gripper_to_model_norm(value: torch.Tensor) -> torch.Tensor:
+    """
+    将 Piper 运行时的夹爪值转换为模型内部的归一化开合[0,1]（开合比例）。
+    """
+    if PIPER_GRIPPER_SPACE == "linear_m":
+        return normalize(value, min_val=PIPER_GRIPPER_LINEAR_MIN, max_val=PIPER_GRIPPER_LINEAR_MAX)
+    elif PIPER_GRIPPER_SPACE == "micrometers":
+        value_m = value.to(dtype=torch.float32) / 1_000_000.0
+        return normalize(value_m, min_val=PIPER_GRIPPER_LINEAR_MIN, max_val=PIPER_GRIPPER_LINEAR_MAX)
+    elif PIPER_GRIPPER_SPACE == "linear_norm":
+        return value  # 已经是 [0,1]
+    else:
+        raise ValueError(f"Unsupported PIPER_GRIPPER_SPACE: {PIPER_GRIPPER_SPACE}")
+
+
+def piper_gripper_from_model_norm(value: torch.Tensor) -> torch.Tensor:
+    """
+    将模型内部的归一化开合[0,1]转换回 Piper 运行时的表示。
+    """
+    value = torch.clamp(value, SMOLVLA_GRIPPER_NORM_MIN, SMOLVLA_GRIPPER_NORM_MAX)
+    if PIPER_GRIPPER_SPACE == "linear_m":
+        return unnormalize(value, min_val=PIPER_GRIPPER_LINEAR_MIN, max_val=PIPER_GRIPPER_LINEAR_MAX)
+    elif PIPER_GRIPPER_SPACE == "micrometers":
+        value_m = unnormalize(value, min_val=PIPER_GRIPPER_LINEAR_MIN, max_val=PIPER_GRIPPER_LINEAR_MAX)
+        return torch.round(value_m * 1_000_000.0)
+    elif PIPER_GRIPPER_SPACE == "linear_norm":
+        return value  # 仍然是 [0,1]
+    else:
+        raise ValueError(f"Unsupported PIPER_GRIPPER_SPACE: {PIPER_GRIPPER_SPACE}")
+
+
+def piper_gripper_from_model_norm_inv(value: torch.Tensor) -> torch.Tensor:
+    """
+    逆映射：将 Piper 运行时表示还原为模型内部[0,1]。
+    """
+    return piper_gripper_to_model_norm(value)
+
+
 class SmolVLAPolicy(PreTrainedPolicy):
     """Wrapper class around VLAFlowMatching model to train and run inference within LeRobot."""
 
@@ -400,13 +462,17 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
         actions = self.unnormalize_outputs({ACTION: actions})[ACTION]
 
-        if self.config.adapt_to_pi_aloha:
+        if getattr(self.config, "adapt_to_pi_piper", False):
+            actions = self._pi_piper_encode_actions(actions)
+        elif getattr(self.config, "adapt_to_pi_aloha", False):
             actions = self._pi_aloha_encode_actions(actions)
 
         return actions
 
     def _prepare_batch(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        if self.config.adapt_to_pi_aloha:
+        if getattr(self.config, "adapt_to_pi_piper", False):
+            batch[OBS_STATE] = self._pi_piper_decode_state(batch[OBS_STATE])
+        elif getattr(self.config, "adapt_to_pi_aloha", False):
             batch[OBS_STATE] = self._pi_aloha_decode_state(batch[OBS_STATE])
 
         batch = self.normalize_inputs(batch)
@@ -447,7 +513,10 @@ class SmolVLAPolicy(PreTrainedPolicy):
 
     def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> dict[str, Tensor]:
         """Do a full training forward pass to compute the loss"""
-        if self.config.adapt_to_pi_aloha:
+        if getattr(self.config, "adapt_to_pi_piper", False):
+            batch[OBS_STATE] = self._pi_piper_decode_state(batch[OBS_STATE])
+            batch[ACTION] = self._pi_piper_encode_actions_inv(batch[ACTION])
+        elif getattr(self.config, "adapt_to_pi_aloha", False):
             batch[OBS_STATE] = self._pi_aloha_decode_state(batch[OBS_STATE])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
         batch = self.normalize_inputs(batch)
@@ -491,6 +560,9 @@ class SmolVLAPolicy(PreTrainedPolicy):
             )
         # Preprocess image features present in the batch
         for key in present_img_keys:
+            if not hasattr(self, "_dbg_printed_img_order"):
+                print("INFO present_img_keys in prepare_images:", present_img_keys)
+                self._dbg_printed_img_order = True
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == 5 else batch[key]
             if self.config.resize_imgs_with_padding is not None:
                 img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
@@ -567,6 +639,32 @@ class SmolVLAPolicy(PreTrainedPolicy):
         # Reverse the gripper transformation that is being applied by the Aloha runtime.
         for motor_idx in [6, 13]:
             actions[:, :, motor_idx] = aloha_gripper_from_angular_inv(actions[:, :, motor_idx])
+        return actions
+
+    def _pi_piper_decode_state(self, state: torch.Tensor) -> torch.Tensor:
+        # 关节方向修正（如需）
+        if PIPER_JOINT_FLIPS:
+            state[:, PIPER_JOINT_FLIPS] *= -1
+        # 夹爪从 Piper 空间 -> 模型内部[0,1]
+        for motor_idx in PIPER_GRIPPER_IDXS:
+            state[:, motor_idx] = piper_gripper_to_model_norm(state[:, motor_idx])
+        return state
+
+    def _pi_piper_encode_actions(self, actions: torch.Tensor) -> torch.Tensor:
+        # 关节方向修正（如需）
+        if PIPER_JOINT_FLIPS:
+            actions[:, :, PIPER_JOINT_FLIPS] *= -1
+        # 夹爪从模型内部[0,1] -> Piper 空间
+        for motor_idx in PIPER_GRIPPER_IDXS:
+            actions[:, :, motor_idx] = piper_gripper_from_model_norm(actions[:, :, motor_idx])
+        return actions
+
+    def _pi_piper_encode_actions_inv(self, actions: torch.Tensor) -> torch.Tensor:
+        # 与 encode 相反（用于训练把数据集动作转回模型空间）
+        if PIPER_JOINT_FLIPS:
+            actions[:, :, PIPER_JOINT_FLIPS] *= -1
+        for motor_idx in PIPER_GRIPPER_IDXS:
+            actions[:, :, motor_idx] = piper_gripper_from_model_norm_inv(actions[:, :, motor_idx])
         return actions
 
     def prepare_state(self, batch):

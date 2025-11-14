@@ -12,5 +12,5 @@ def get_piper_sdk_instance():
     """
     global _shared_sdk_instance
     if _shared_sdk_instance is None:
-        _shared_sdk_instance = C_PiperInterface_V2()
+        _shared_sdk_instance = C_PiperInterface_V2("can_0204")
     return _shared_sdk_instance

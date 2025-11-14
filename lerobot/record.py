@@ -69,7 +69,7 @@ python -m lerobot.record \
     --dataset.repo_id=Sprinng/eval_smolvla_stack_test \
     --dataset.single_task="Stack left cube on the right one" \
     --policy.path=outputs/train/smolvla_50/checkpoints/last/pretrained_model \
-    --display_data=true
+    --display_data=true \
 ```
 
 """
