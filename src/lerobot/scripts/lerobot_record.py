@@ -56,6 +56,31 @@ lerobot-record \
   --dataset.num_episodes=25 \
   --dataset.single_task="Grab and handover the red cube to the other arm"
 ```
+```shell
+#① Record a dataset with Piper robot and teleoperate it with another Piper robot.
+lerobot-record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --dataset.repo_id=Sprinng/record-test-5 \
+    --dataset.num_episodes=2 \
+    --dataset.single_task="Grab the rag" \
+    --teleop.type=piper_leader \
+    --teleop.id=04 \
+    --display_data=true 
+```
+
+```shell
+#③ Run inference and evaluate the policy: SmolVLA.
+python -m lerobot.record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --robot.control_mode=policy \
+    --dataset.repo_id=Sprinng/ttest \
+    --dataset.single_task="Stack left cube on the right one" \
+    --policy.path=outputs/train/smolvla_50/checkpoints/last/pretrained_model \
+    --display_data=true \
+```
+
 """
 
 import logging
@@ -98,6 +123,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
@@ -108,6 +134,7 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
+    piper_leader,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -344,6 +371,7 @@ def record_loop(
         if policy is not None and act_processed_policy is not None:
             action_values = act_processed_policy
             robot_action_to_send = robot_action_processor((act_processed_policy, obs))
+            _sent_action = robot.send_action(robot_action_to_send)
         else:
             action_values = act_processed_teleop
             robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
@@ -352,7 +380,7 @@ def record_loop(
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset. action = postprocessor.process(action)
         # TODO(steven, pepijn, adil): we should use a pipeline step to clip the action, so the sent action is the action that we input to the robot.
-        _sent_action = robot.send_action(robot_action_to_send)
+        # _sent_action = robot.send_action(robot_action_to_send)
 
         # Write to dataset
         if dataset is not None:
@@ -504,8 +532,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     if not is_headless() and listener is not None:
         listener.stop()
 
-    if cfg.dataset.push_to_hub:
-        dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
+    # if cfg.dataset.push_to_hub:
+    #     dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
 
     log_say("Exiting", cfg.play_sounds)
     return dataset
