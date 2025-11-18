@@ -52,6 +52,40 @@ from lerobot.utils.utils import (
 )
 
 
+"""
+Example command to train an ACT policy on the so101_test dataset and push the trained policy to the Hub:
+```bash
+lerobot-train \
+  --dataset.repo_id=${HF_USER}/so101_test \
+  --policy.type=act \
+  --output_dir=outputs/train/act_so101_test \
+  --job_name=act_so101_test \
+  --policy.device=cuda \
+  --wandb.enable=true \
+  --policy.repo_id=${HF_USER}/my_policy
+```
+
+① train SmolVLA
+```
+export TOKENIZERS_PARALLELISM=false \
+```
+job_name这个参数控制wandb里面的run name
+```
+lerobot-train \
+  --dataset.repo_id=Sprinng/record-test-5 \
+  --policy.path=lerobot/smolvla_base \
+  --output_dir=outputs/train/test \
+  --job_name=test \
+  --policy.device=cuda \
+  --wandb.enable=true \
+  --batch_size=16 \
+  --steps=200000 \
+  --policy.push_to_hub=false 
+  --rename_map='{"observation.images.wrist_rgb":"observation.images.camera1"}'
+```
+"""
+
+
 def update_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
