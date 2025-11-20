@@ -26,13 +26,13 @@ class PiperFollowerConfig(RobotConfig):
     
     #cameras 使用 RealSenseCameraConfig 实例化
     cameras: dict[str, RealSenseCameraConfig] = field(default_factory=lambda: {
-        # "top": RealSenseCameraConfig(
-        #     serial_number_or_name="341522303300",  # 正前方的d435i相机，可以用find_cameras()获取
-        #     fps = 30,
-        #     width = 640,
-        #     height = 480,
-        #     use_depth = False,
-        # ),
+        "side": RealSenseCameraConfig(
+            serial_number_or_name="035422071275", 
+            fps = 30,
+            width = 640,
+            height = 480,
+            use_depth = False,
+        ),
         "wrist": RealSenseCameraConfig(
             serial_number_or_name="233522076516",  # 腕部的d435i相机，可以用find_cameras()获取
             fps = 30,
@@ -40,13 +40,13 @@ class PiperFollowerConfig(RobotConfig):
             height = 480,
             use_depth = False,
         ),
-        # "front": RealSenseCameraConfig(
-        #     serial_number_or_name="343122300459",  # 正前方的d435i相机，可以用find_cameras()获取
-        #     fps = 30,
-        #     width = 640,
-        #     height = 480,
-        #     use_depth = False,
-        # ),
+        "top": RealSenseCameraConfig(
+            serial_number_or_name="343122300459",  
+            fps = 30,
+            width = 640,
+            height = 480,
+            use_depth = False,
+        ),
     })
     
     # 转换常数

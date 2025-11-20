@@ -61,9 +61,9 @@ lerobot-record \
 lerobot-record \
     --robot.type=piper_follower \
     --robot.id=02 \
-    --dataset.repo_id=Sprinng/record-test-5 \
-    --dataset.num_episodes=2 \
-    --dataset.single_task="Grab the rag" \
+    --dataset.repo_id=Sprinng/piper_transfer_cube_to_bin \
+    --dataset.num_episodes=50 \
+    --dataset.single_task="Grab the cube and place it into the bin." \
     --teleop.type=piper_leader \
     --teleop.id=04 \
     --display_data=true 
@@ -174,7 +174,7 @@ class DatasetRecordConfig:
     # Encode frames in the dataset into video
     video: bool = True
     # Upload dataset to Hugging Face hub.
-    push_to_hub: bool = True
+    push_to_hub: bool = False
     # Upload on private repository on the Hugging Face hub.
     private: bool = False
     # Add tags to your dataset on the hub.
@@ -208,7 +208,7 @@ class RecordConfig:
     # Whether to control the robot with a policy
     policy: PreTrainedConfig | None = None
     # Display all cameras on screen
-    display_data: bool = False
+    display_data: bool = True
     # Use vocal synthesis to read events.
     play_sounds: bool = True
     # Resume recording on an existing dataset.
@@ -372,9 +372,11 @@ def record_loop(
             action_values = act_processed_policy
             robot_action_to_send = robot_action_processor((act_processed_policy, obs))
             _sent_action = robot.send_action(robot_action_to_send)
+        
+        # 在piper的teleop语境下无需以下操作    
         else:
             action_values = act_processed_teleop
-            robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
+        #     robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
 
         # Send action to robot
         # Action can eventually be clipped using `max_relative_target`,
@@ -532,8 +534,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     if not is_headless() and listener is not None:
         listener.stop()
 
-    # if cfg.dataset.push_to_hub:
-    #     dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
+    if cfg.dataset.push_to_hub:
+        dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
 
     log_say("Exiting", cfg.play_sounds)
     return dataset

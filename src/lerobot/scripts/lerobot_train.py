@@ -72,16 +72,16 @@ export TOKENIZERS_PARALLELISM=false \
 job_name这个参数控制wandb里面的run name
 ```
 lerobot-train \
-  --dataset.repo_id=Sprinng/record-test-5 \
+  --dataset.repo_id=Sprinng/piper_transfer_cube_to_bin \
   --policy.path=lerobot/smolvla_base \
-  --output_dir=outputs/train/test \
-  --job_name=test \
+  --output_dir=outputs/train/piper_transfer_cube_to_bin \
+  --job_name=piper_transfer_cube_to_bin \
   --policy.device=cuda \
   --wandb.enable=true \
-  --batch_size=16 \
+  --batch_size=32 \
   --steps=200000 \
-  --policy.push_to_hub=false 
-  --rename_map='{"observation.images.wrist_rgb":"observation.images.camera1"}'
+  --policy.push_to_hub=false \
+  --rename_map='{"observation.images.top_rgb":"observation.images.camera1", "observation.images.wrist_rgb":"observation.images.camera2", "observation.images.side_rgb":"observation.images.camera3"}'
 ```
 """
 

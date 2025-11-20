@@ -53,7 +53,7 @@ class SmolVLAConfig(PreTrainedConfig):
 
     # Converts the joint and gripper values from the standard Aloha space to
     # the space used by the pi internal runtime which was used to train the base model.
-    adapt_to_pi_aloha: bool = False
+    adapt_to_pi_aloha: bool = True
 
     # Converts joint dimensions to deltas with respect to the current state before passing to the model.
     # Gripper dimensions will remain in absolute values.
