@@ -56,6 +56,32 @@ lerobot-record \
   --dataset.num_episodes=25 \
   --dataset.single_task="Grab and handover the red cube to the other arm"
 ```
+```shell
+#① Record a dataset with Piper robot and teleoperate it with another Piper robot.
+lerobot-record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --dataset.repo_id=Sprinng/piper_transfer_cube_to_bin \
+    --dataset.num_episodes=50 \
+    --dataset.single_task="Grab the cube and place it into the bin." \
+    --teleop.type=piper_leader \
+    --teleop.id=04 \
+    --display_data=true 
+```
+
+```shell
+#③ Run inference and evaluate the policy: SmolVLA.
+lerobot-record \
+    --robot.type=piper_follower \
+    --robot.id=02 \
+    --robot.control_mode=policy \
+    --dataset.repo_id=Sprinng/eval_transfer_cube_to_bin \
+    --dataset.single_task="Grab the cube and place it into the bin." \
+    --policy.path=outputs/train/piper_transfer_cube_to_bin/checkpoints/last/pretrained_model \
+    --display_data=true \
+    --dataset.num_episodes=5 \
+```
+
 """
 
 import logging
@@ -98,6 +124,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
@@ -108,6 +135,7 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
+    piper_leader,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -147,7 +175,7 @@ class DatasetRecordConfig:
     # Encode frames in the dataset into video
     video: bool = True
     # Upload dataset to Hugging Face hub.
-    push_to_hub: bool = True
+    push_to_hub: bool = False
     # Upload on private repository on the Hugging Face hub.
     private: bool = False
     # Add tags to your dataset on the hub.
@@ -181,7 +209,7 @@ class RecordConfig:
     # Whether to control the robot with a policy
     policy: PreTrainedConfig | None = None
     # Display all cameras on screen
-    display_data: bool = False
+    display_data: bool = True
     # Use vocal synthesis to read events.
     play_sounds: bool = True
     # Resume recording on an existing dataset.
@@ -344,15 +372,18 @@ def record_loop(
         if policy is not None and act_processed_policy is not None:
             action_values = act_processed_policy
             robot_action_to_send = robot_action_processor((act_processed_policy, obs))
+            _sent_action = robot.send_action(robot_action_to_send)
+        
+        # 在piper的teleop语境下无需以下操作    
         else:
             action_values = act_processed_teleop
-            robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
+        #     robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
 
         # Send action to robot
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset. action = postprocessor.process(action)
         # TODO(steven, pepijn, adil): we should use a pipeline step to clip the action, so the sent action is the action that we input to the robot.
-        _sent_action = robot.send_action(robot_action_to_send)
+        # _sent_action = robot.send_action(robot_action_to_send)
 
         # Write to dataset
         if dataset is not None:
@@ -425,7 +456,18 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         )
 
     # Load pretrained policy
-    policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
+    # Apply rename_map to dataset metadata BEFORE loading policy
+    # dataset_meta = dataset.meta
+    # if cfg.dataset.rename_map:
+    #     # Rename the feature keys in metadata to match what policy expects
+    #     renamed_features = {}
+    #     for old_key, new_key in cfg.dataset.rename_map.items():
+    #         if old_key in dataset_meta.features:
+    #             renamed_features[new_key] = dataset_meta.features.pop(old_key)
+    #     dataset_meta.features.update(renamed_features)
+    
+    policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta,rename_map=cfg.dataset.rename_map)
+    
     preprocessor = None
     postprocessor = None
     if cfg.policy is not None:
