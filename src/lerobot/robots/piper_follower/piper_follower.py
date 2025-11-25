@@ -82,7 +82,7 @@ class PiperFollower(Robot):
         camera_features = {}
         for cam_name, cam_config in self.config.cameras.items():
             # RGB 图像特征
-            camera_features[f"{cam_name}_rgb"] = (cam_config.height, cam_config.width, 3)
+            camera_features[f"{cam_name}"] = (cam_config.height, cam_config.width, 3)
             # 深度图像特征
             if cam_config.use_depth:
                 camera_features[f"{cam_name}_depth"] = (cam_config.height, cam_config.width, 1)
@@ -174,7 +174,7 @@ class PiperFollower(Robot):
         for cam_key, cam in self.cameras.items():
             start = time.perf_counter()
             #读取rgb图像
-            obs_dict[f"{cam_key}_rgb"] = cam.async_read()
+            obs_dict[f"{cam_key}"] = cam.async_read()
             if cam.use_depth:
                 depth_image = cam.read_depth()  # 同步读取深度图像
                 depth_image = depth_image[:,:,np.newaxis]  # 添加通道维度

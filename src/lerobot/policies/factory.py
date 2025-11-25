@@ -416,6 +416,7 @@ def make_policy(
         policy = policy_cls(**kwargs)
 
     policy.to(cfg.device)
+    # 一个断言，检查 policy 是否是 torch.nn.Module 的实例
     assert isinstance(policy, torch.nn.Module)
 
     # policy = torch.compile(policy, mode="reduce-overhead")

@@ -71,14 +71,15 @@ lerobot-record \
 
 ```shell
 #③ Run inference and evaluate the policy: SmolVLA.
-python -m lerobot.record \
+lerobot-record \
     --robot.type=piper_follower \
     --robot.id=02 \
     --robot.control_mode=policy \
-    --dataset.repo_id=Sprinng/ttest \
-    --dataset.single_task="Stack left cube on the right one" \
-    --policy.path=outputs/train/smolvla_50/checkpoints/last/pretrained_model \
+    --dataset.repo_id=Sprinng/eval_transfer_cube_to_bin \
+    --dataset.single_task="Grab the cube and place it into the bin." \
+    --policy.path=outputs/train/piper_transfer_cube_to_bin/checkpoints/last/pretrained_model \
     --display_data=true \
+    --dataset.num_episodes=5 \
 ```
 
 """
@@ -455,7 +456,18 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         )
 
     # Load pretrained policy
-    policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
+    # Apply rename_map to dataset metadata BEFORE loading policy
+    # dataset_meta = dataset.meta
+    # if cfg.dataset.rename_map:
+    #     # Rename the feature keys in metadata to match what policy expects
+    #     renamed_features = {}
+    #     for old_key, new_key in cfg.dataset.rename_map.items():
+    #         if old_key in dataset_meta.features:
+    #             renamed_features[new_key] = dataset_meta.features.pop(old_key)
+    #     dataset_meta.features.update(renamed_features)
+    
+    policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta,rename_map=cfg.dataset.rename_map)
+    
     preprocessor = None
     postprocessor = None
     if cfg.policy is not None:
