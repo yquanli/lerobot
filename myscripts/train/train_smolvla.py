@@ -314,7 +314,6 @@ class TrainingConfig:
 
 def config_to_cli_args(config: TrainingConfig) -> list[str]:
     """将配置对象转换为命令行参数列表"""
-    # ⭐ 使用 lerobot-train 而不是 python -m
     args = ["lerobot-train"]
     
     # 策略基本配置
@@ -339,11 +338,28 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
         w, h = config.resize_imgs_with_padding
         args.append(f"--policy.resize_imgs_with_padding=[{w},{h}]")
     
-    # 特征维度
-    args.extend([
-        f"--policy.input_features.observation.state.shape=[{config.state_dim}]",
-        f"--policy.output_features.action.shape=[{config.action_dim}]",
-    ])
+    # ⭐⭐⭐ 修正：使用完整的 JSON 对象来指定特征维度 ⭐⭐⭐
+    # 构建 input_features 对象
+    input_features = {
+        "observation.state": {
+            "type": "STATE",
+            "shape": [config.state_dim]
+        }
+    }
+    # 转换为 JSON 字符串并转义引号
+    input_features_json = json.dumps(input_features).replace('"', '\\"')
+    args.append(f'--policy.input_features="{input_features_json}"')
+    
+    # 构建 output_features 对象
+    output_features = {
+        "action": {
+            "type": "ACTION",
+            "shape": [config.action_dim]
+        }
+    }
+    # 转换为 JSON 字符串并转义引号
+    output_features_json = json.dumps(output_features).replace('"', '\\"')
+    args.append(f'--policy.output_features="{output_features_json}"')
     
     # 模型架构配置（如果与默认值不同）
     if config.max_state_dim != 32:
@@ -363,6 +379,7 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
     args.append(f"--dataset.repo_id={config.dataset_repo_id}")
     
     if config.rename_map:
+        # ⭐ 使用单引号包裹 JSON，内部使用双引号
         rename_str = json.dumps(config.rename_map)
         args.append(f"--rename_map='{rename_str}'")
     
@@ -412,9 +429,10 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
             args.append(f"--wandb.project={config.wandb_project}")
         if config.wandb_entity:
             args.append(f"--wandb.entity={config.wandb_entity}")
+        
+        # 禁用 W&B Artifact
         if config.wandb_disable_artifact:
             args.append(f"--wandb.disable_artifact={str(config.wandb_disable_artifact).lower()}")
-
     
     args.append(f"--log_freq={config.log_freq}")
     
