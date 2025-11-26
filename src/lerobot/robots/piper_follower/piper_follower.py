@@ -211,7 +211,7 @@ class PiperFollower(Robot):
         gripper_angle = round(get_float_value(action['gripper']) * PiperFollowerConfig.MM_TO_UM)
         
         # Send the action to the robot
-        self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
+        self.robot.MotionCtrl_2(0x01, 0x01, 50, 0x00)
         self.robot.JointCtrl(jnt_1, jnt_2, jnt_3, jnt_4, jnt_5, jnt_6)
         self.robot.GripperCtrl(abs(gripper_angle), 1000, 0x01, 0)
         
@@ -220,9 +220,10 @@ class PiperFollower(Robot):
 
     def back_to_zero(self):
         # Back to the home position
-        self.robot.MotionCtrl_2(0x01, 0x01, 100, 0x00)
-        self.robot.JointCtrl(0, 0, 0, 0, 0.5*PiperFollowerConfig.RAD_TO_MDEGREE, 0)
-        self.robot.GripperCtrl(50*PiperFollowerConfig.MM_TO_UM, 1000, 0x01, 0)
+        self.robot.MotionCtrl_2(0x01, 0x01, 50, 0x00)
+        self.robot.JointCtrl(0, 0, 0, 0, round(0.5*PiperFollowerConfig.RAD_TO_MDEGREE), 0)
+        self.robot.GripperCtrl(round(50*PiperFollowerConfig.MM_TO_UM), 1000, 0x01, 0)
+        self.robot.GripperCtrl(0, 1000, 0x01, 0)
         print("Piper is back to zero.")
         return None
 

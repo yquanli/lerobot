@@ -514,6 +514,19 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
             ):
                 log_say("Reset the environment", cfg.play_sounds)
+                
+                # Auto-reset Piper robot when controlled by policy
+                if policy is not None and robot.robot_type == "piper_follower":
+                    log_say("Policy detected. Resetting Piper robot to zero position.", cfg.play_sounds)
+                    try:
+                        robot.back_to_zero()
+                    except AttributeError:
+                        logging.warning(
+                            "Robot does not have 'back_to_zero' method. Skipping automatic reset."
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to reset robot: {e}")
+                
                 record_loop(
                     robot=robot,
                     events=events,
