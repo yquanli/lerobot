@@ -10,6 +10,8 @@ SmolVLA 训练脚本 - Piper 7D 机器人
     - 验证配置: python myscripts/train/train_smolvla.py --validate-only
     - 生成命令: python myscripts/train/train_smolvla.py --print-command
     - 恢复训练: python myscripts/train/train_smolvla.py --resume <checkpoint_path>
+
+    export CUDA_VISIBLE_DEVICES=5
 """
 
 import argparse
@@ -45,7 +47,7 @@ class TrainingConfig:
     """预训练模型路径或 HuggingFace repo ID"""
     
     # --- VLM 权重加载 ---
-    load_vlm_weights: bool = False
+    load_vlm_weights: bool = True
     """是否加载预训练的 VLM 权重
     
     """
@@ -155,7 +157,7 @@ class TrainingConfig:
     # ========================================
     # 4. 训练超参数
     # ========================================
-    batch_size: int = 32
+    batch_size: int = 128
     """训练批次大小
     
     推荐值:
@@ -233,10 +235,10 @@ class TrainingConfig:
     # ========================================
     # 5. 输出配置
     # ========================================
-    output_dir: str = "outputs/train/piper_smolvla_finetune"
+    output_dir: str = "outputs/train/piper_smolvla_transfer_cube_to_bin_128"
     """训练输出目录"""
     
-    job_name: str = "smolvla_transfer_cube_to_bin"
+    job_name: str = "smolvla_transfer_cube_to_bin_128"
     """任务名称（用于日志和 wandb）"""
     
     # ========================================
