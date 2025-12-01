@@ -9,7 +9,7 @@ SmolVLA 训练脚本 - Piper 7D 机器人
     - 训练: python myscripts/train/train_smolvla.py
     - 验证配置: python myscripts/train/train_smolvla.py --validate-only
     - 生成命令: python myscripts/train/train_smolvla.py --print-command
-    - 恢复训练: python myscripts/train/train_smolvla.py --resume <checkpoint_path>
+    - 恢复训练: python myscripts/train/train_smolvla.py --resume
 """
 
 import argparse
@@ -274,8 +274,14 @@ class TrainingConfig:
     seed: int = 1000
     """随机种子"""
     
-    resume_from_checkpoint: str | None = None
-    """从 checkpoint 恢复训练的路径"""
+    resume: bool = False
+    """是否从 checkpoint 恢复训练
+    
+    - True: 从 output_dir/checkpoints/last 恢复训练
+    - False: 从头开始训练
+    
+    注意: checkpoint 路径由 output_dir 自动推导，无需手动指定
+    """
     
     push_to_hub: bool = False
     """训练完成后是否推送到 HuggingFace Hub"""
@@ -447,16 +453,9 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
     if config.push_to_hub and config.hub_repo_id:
         args.append(f"--policy.repo_id={config.hub_repo_id}")
     
-    if config.resume_from_checkpoint:
-        args.append(f"--resume_from_checkpoint={config.resume_from_checkpoint}")
-    
-    # 高级配置
-    if config.vlm_model_name:
-        args.append(f"--policy.vlm_model_name={config.vlm_model_name}")
-    if config.tokenizer_max_length is not None:
-        args.append(f"--policy.tokenizer_max_length={config.tokenizer_max_length}")
-    if config.num_steps is not None:
-        args.append(f"--policy.num_steps={config.num_steps}")
+    # ⭐ 修改：resume 是布尔值，不是路径
+    if config.resume:
+        args.append("--resume=true")
     
     return args
 
@@ -509,16 +508,23 @@ def validate_config(config: TrainingConfig) -> bool:
             "Consider reducing batch_size to 8-16."
         )
     
+    # 检查 resume 配置
+    if config.resume:
+        # 检查 last checkpoint 是否存在
+        checkpoint_path = Path(config.output_dir) / "checkpoints" / "last"
+        if not checkpoint_path.exists():
+            errors.append(
+                f"Resume is enabled but checkpoint not found: {checkpoint_path}\n"
+                f"  Make sure the output directory contains a valid checkpoint with 'last' symlink."
+            )
+    
     # 检查输出目录
     output_path = Path(config.output_dir)
-    if output_path.exists() and any(output_path.iterdir()):
-        warnings.append(f"Output directory already exists and is not empty: {output_path}")
-    
-    # 检查 resume checkpoint
-    if config.resume_from_checkpoint:
-        checkpoint_path = Path(config.resume_from_checkpoint)
-        if not checkpoint_path.exists():
-            errors.append(f"Resume checkpoint not found: {checkpoint_path}")
+    if output_path.exists() and any(output_path.iterdir()) and not config.resume:
+        warnings.append(
+            f"Output directory already exists and is not empty: {output_path}\n"
+            f"  Consider using --resume to continue training, or change output_dir."
+        )
     
     # 检查 Hub 配置
     if config.push_to_hub and not config.hub_repo_id:
@@ -587,6 +593,9 @@ def print_config_summary(config: TrainingConfig):
     print("\n💾 Checkpointing:")
     print(f"  Eval Frequency:        every {config.eval_freq} steps")
     print(f"  Save Frequency:        every {config.save_freq} steps")
+    if config.resume:
+        checkpoint_path = Path(config.output_dir) / "checkpoints" / "last"
+        print(f"  Resume from:           {checkpoint_path}")
     
     print("\n📂 Output:")
     print(f"  Output Directory:      {config.output_dir}")
@@ -670,8 +679,11 @@ Examples:
   # 打印命令但不运行
   python myscripts/train/train_smolvla.py --print-command
   
-  # 从 checkpoint 恢复训练
-  python myscripts/train/train_smolvla.py --resume outputs/train/piper/checkpoints/050000
+  # 从 checkpoint 恢复训练（自动使用 output_dir/checkpoints/last）
+  python myscripts/train/train_smolvla.py --resume
+  
+  # 从不同的训练目录恢复
+  python myscripts/train/train_smolvla.py --resume --output-dir outputs/train/another_experiment
         """
     )
     
@@ -687,9 +699,14 @@ Examples:
     )
     parser.add_argument(
         "--resume",
+        action="store_true",
+        help="从 checkpoint 恢复训练（自动使用 output_dir/checkpoints/last）"
+    )
+    parser.add_argument(
+        "--output-dir",
         type=str,
         default=None,
-        help="从指定 checkpoint 恢复训练"
+        help="覆盖配置中的 output_dir（用于从不同目录恢复训练）"
     )
     
     args = parser.parse_args()
@@ -697,9 +714,13 @@ Examples:
     # 创建配置
     config = TrainingConfig()
     
-    # 如果指定了 resume，覆盖配置
+    # 如果指定了 resume，启用恢复模式
     if args.resume:
-        config.resume_from_checkpoint = args.resume
+        config.resume = True
+    
+    # 如果指定了 output_dir，覆盖配置
+    if args.output_dir:
+        config.output_dir = args.output_dir
     
     # 根据模式运行
     if args.validate_only:
