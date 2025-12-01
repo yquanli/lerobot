@@ -106,6 +106,24 @@ class TrainingConfig:
     dataset_repo_id: str = "Sprinng/piper_transfer_cube_to_bin"
     """数据集 HuggingFace repo ID"""
     
+    # 图像增强配置
+    enable_image_transforms: bool = True
+    """是否启用图像增强
+    - True: 启用随机变换增强训练数据（推荐）
+    - False: 不使用增强（可能导致过拟合）
+    
+    默认增强包括:
+    - RandomAffine: 随机仿射变换（旋转±5°，平移5%）
+    - ColorJitter: 颜色抖动（亮度、对比度、饱和度、色调）
+    - SharpnessJitter: 锐度抖动
+    """
+    
+    max_num_transforms: int = 3
+    """每次应用的最大增强数量"""
+    
+    random_transform_order: bool = False
+    """是否随机打乱增强顺序"""
+    
     # 特征名称映射（数据集名称 → 策略名称）
     rename_map: dict[str, str] = field(default_factory=lambda: {
         "observation.images.top_rgb": "observation.images.camera1",
@@ -386,6 +404,11 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
     
     # 数据集配置
     args.append(f"--dataset.repo_id={config.dataset_repo_id}")
+    # 图像增强配置
+    args.append(f"--dataset.image_transforms.enable={str(config.enable_image_transforms).lower()}")
+    if config.enable_image_transforms:
+        args.append(f"--dataset.image_transforms.max_num_transforms={config.max_num_transforms}")
+        args.append(f"--dataset.image_transforms.random_order={str(config.random_transform_order).lower()}")
     
     if config.rename_map:
         # ⭐ 使用单引号包裹 JSON，内部使用双引号
@@ -459,6 +482,39 @@ def config_to_cli_args(config: TrainingConfig) -> list[str]:
     # ⭐ 修改：resume 是布尔值，不是路径
     if config.resume:
         args.append("--resume=true")
+    
+    # # ⭐⭐⭐ 必须传递 optimizer 和 scheduler 配置 ⭐⭐⭐
+    # # 即使是 resume 训练，也需要先创建初始对象，然后再加载 checkpoint 状态
+    
+    # # 优化器配置（使用配置值或默认值）
+    # optimizer_lr = config.learning_rate if config.learning_rate is not None else 1e-4
+    # optimizer_betas = config.optimizer_betas if config.optimizer_betas is not None else (0.9, 0.95)
+    # optimizer_eps = config.optimizer_eps if config.optimizer_eps is not None else 1e-8
+    # optimizer_weight_decay = config.optimizer_weight_decay if config.optimizer_weight_decay is not None else 1e-10
+    # optimizer_grad_clip_norm = config.grad_clip_norm if config.grad_clip_norm is not None else 10.0
+    
+    # args.extend([
+    #     "--optimizer.type=adamw",
+    #     f"--optimizer.lr={optimizer_lr}",
+    #     f"--optimizer.betas=[{optimizer_betas[0]},{optimizer_betas[1]}]",
+    #     f"--optimizer.eps={optimizer_eps}",
+    #     f"--optimizer.weight_decay={optimizer_weight_decay}",
+    #     f"--optimizer.grad_clip_norm={optimizer_grad_clip_norm}",
+    # ])
+    
+    # # 学习率调度器配置（使用配置值或默认值）
+    # scheduler_warmup_steps = config.scheduler_warmup_steps if config.scheduler_warmup_steps is not None else 1000
+    # scheduler_decay_steps = config.scheduler_decay_steps if config.scheduler_decay_steps is not None else 30000
+    # scheduler_peak_lr = optimizer_lr
+    # scheduler_min_lr = config.scheduler_decay_lr if config.scheduler_decay_lr is not None else 2.5e-6
+    
+    # args.extend([
+    #     "--scheduler.type=cosine_decay_with_warmup",  
+    #     f"--scheduler.num_warmup_steps={scheduler_warmup_steps}",  
+    #     f"--scheduler.num_decay_steps={scheduler_decay_steps}",    
+    #     f"--scheduler.peak_lr={scheduler_peak_lr}",
+    #     f"--scheduler.decay_lr={scheduler_min_lr}",                
+    # ])
     
     return args
 
