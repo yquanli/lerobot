@@ -28,7 +28,7 @@ def get_output_dir():
     return "./myscripts/attention/outputs"
 
 
-def find_images_in_input():
+def find_images_in_inputs():
     """Find all images in the input directory"""
     input_dir = Path(get_input_dir())
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -84,7 +84,7 @@ def main():
     images_to_process = []
     
     if args.all:
-        images_to_process = find_images_in_input()
+        images_to_process = find_images_in_inputs()
         if not images_to_process:
             print(f"No images found in {input_dir}")
             print("Please add images to the input folder or specify --image")
@@ -103,7 +103,7 @@ def main():
                 print(f"Also checked: {input_path}")
                 return
     else:
-        images_to_process = find_images_in_input()
+        images_to_process = find_images_in_inputs()
         if not images_to_process:
             print(f"No images in {input_dir}, using random test image")
             img_array = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
