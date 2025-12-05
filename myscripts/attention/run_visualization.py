@@ -1,23 +1,29 @@
 """
-Quick script to run SmolVLA attention visualization.
+SmolVLA Attention Visualization - 命令行入口
 
-Usage:
-    python run_visualization.py --image path/to/image.jpg --instruction "your instruction"
-    python run_visualization.py --image cube.png  # Load from input folder
-    python run_visualization.py  # Process all images in input folder
-    python run_visualization.py --detailed  # Run detailed analysis
-    python run_visualization.py --overlay-only  # Only generate overlay visualizations
+使用方法:
+    # 使用数据集
+    python run_visualization.py --repo-id Sprinng/piper_transfer_cube_to_bin --episode-index 0 --frame-index 50
+    
+    # 使用本地图片
+    python run_visualization.py --image cube.png --instruction "Pick up the cube"
 """
 
 import argparse
 import sys
+import os
 from pathlib import Path
+from typing import Dict, Optional
 
 sys.path.insert(0, "/home/zwt/Projects/lerobot")
 sys.path.insert(0, "/home/zwt/Projects/lerobot/src")
 
-from PIL import Image
+import torch
 import numpy as np
+from PIL import Image
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 
 def get_input_dir():
@@ -28,7 +34,7 @@ def get_output_dir():
     return "./myscripts/attention/outputs"
 
 
-def find_images_in_inputs():
+def find_images_in_input():
     """Find all images in the input directory"""
     input_dir = Path(get_input_dir())
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -39,27 +45,93 @@ def find_images_in_inputs():
     return sorted(images)
 
 
+def load_dataset_item(
+    repo_id: str,
+    episode_index: int = 0,
+    frame_index: int = 0,
+    root: Optional[str] = None
+) -> Dict:
+    """从 LeRobotDataset 加载数据项"""
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    
+    print(f"Loading dataset: {repo_id}")
+    dataset = LeRobotDataset(
+        repo_id=repo_id,
+        root=root,
+        episodes=[episode_index] if episode_index is not None else None,
+    )
+    
+    ep_meta = dataset.meta.episodes[episode_index]
+    ep_start = ep_meta['dataset_from_index']
+    ep_end = ep_meta['dataset_to_index']
+    ep_length = ep_end - ep_start
+    
+    if frame_index >= ep_length:
+        print(f"Warning: frame_index {frame_index} exceeds episode length {ep_length}, using last frame")
+        frame_index = ep_length - 1
+    
+    global_idx = ep_start + frame_index
+    print(f"Episode {episode_index}: frames {ep_start}-{ep_end} (length={ep_length})")
+    print(f"Loading frame {frame_index} (global index: {global_idx})")
+    
+    item = dataset[global_idx]
+    
+    images = {}
+    for key in dataset.meta.camera_keys:
+        if key in item:
+            img_tensor = item[key]
+            if isinstance(img_tensor, torch.Tensor):
+                if img_tensor.ndim == 4:
+                    img_tensor = img_tensor[0]
+                if img_tensor.min() < 0:
+                    img_tensor = (img_tensor + 1) / 2
+                img_np = (img_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+                images[key] = Image.fromarray(img_np)
+    
+    state = None
+    if 'observation.state' in item:
+        state = item['observation.state']
+        if isinstance(state, torch.Tensor):
+            if state.ndim == 2:
+                state = state[0]
+    
+    instruction = None
+    if 'task' in item:
+        instruction = item['task']
+        if isinstance(instruction, list):
+            instruction = instruction[0]
+    
+    if instruction is None:
+        tasks = dataset.meta.tasks
+        if hasattr(tasks, 'index') and len(tasks) > 0:
+            instruction = tasks.index[0]
+        else:
+            instruction = "Perform the task."
+    
+    return {
+        'images': images,
+        'state': state,
+        'instruction': instruction,
+        'stats': dataset.meta.stats,
+        'episode_index': episode_index,
+        'frame_index': frame_index,
+        'camera_keys': list(images.keys()),
+    }
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Visualize SmolVLA Attention")
-    parser.add_argument("--image", type=str, default=None, 
-                        help="Path to input image or image name in input folder")
-    parser.add_argument("--instruction", type=str, default="Pick up the red object.", 
-                        help="Task instruction")
-    parser.add_argument("--model", type=str, default="lerobot/smolvla_base", 
-                        help="Model path")
-    parser.add_argument("--output", type=str, default=None, 
-                        help="Output directory (default: ./myscripts/attention/outputs)")
-    parser.add_argument("--detailed", action="store_true", 
-                        help="Run detailed analysis")
-    parser.add_argument("--all", action="store_true",
-                        help="Process all images in input folder")
-    parser.add_argument("--overlay-alpha", type=float, default=0.5,
-                        help="Attention overlay transparency (0-1)")
-    parser.add_argument("--overlay-cmap", type=str, default="jet",
-                        choices=["jet", "hot", "viridis", "plasma", "inferno", "magma"],
-                        help="Colormap for attention overlay")
-    parser.add_argument("--layers", type=str, default=None,
-                        help="Specific layers to visualize, e.g., '15,16,17,18'")
+    parser = argparse.ArgumentParser(description="SmolVLA Attention Visualization")
+    
+    parser.add_argument("--repo-id", type=str, default=None, help="Dataset repository ID")
+    parser.add_argument("--dataset-root", type=str, default=None, help="Local dataset root")
+    parser.add_argument("--episode-index", type=int, default=0, help="Episode index")
+    parser.add_argument("--frame-index", type=int, default=0, help="Frame index")
+    parser.add_argument("--image", type=str, default=None, help="Path to input image")
+    parser.add_argument("--instruction", type=str, default="Pick up the red object.", help="Task instruction")
+    parser.add_argument("--model", type=str, default="lerobot/smolvla_base", help="Model path")
+    parser.add_argument("--output", type=str, default="./myscripts/attention/outputs", help="Output directory")
+    parser.add_argument("--overlay-alpha", type=float, default=0.5, help="Overlay transparency")
+    parser.add_argument("--save-matrix", action="store_true", help="Save raw attention matrices")
     
     args = parser.parse_args()
     
@@ -70,98 +142,96 @@ def main():
     Path(input_dir).mkdir(parents=True, exist_ok=True)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # Parse specified layers
-    selected_layers = None
-    if args.layers:
-        try:
-            selected_layers = [int(x.strip()) for x in args.layers.split(',')]
-        except ValueError:
-            print(f"Invalid layers format: {args.layers}")
-            print("Expected format: '15,16,17,18'")
-            return
+    from visualize_attention import SmolVLAAttentionVisualizer, AttentionConfig
     
-    # Collect images to process
-    images_to_process = []
+    config = AttentionConfig(
+        model_path=args.model,
+        input_dir=input_dir,
+        output_dir=output_dir,
+        overlay_alpha=args.overlay_alpha,
+        save_raw_attention_matrix=args.save_matrix,
+    )
     
-    if args.all:
-        images_to_process = find_images_in_inputs()
-        if not images_to_process:
-            print(f"No images found in {input_dir}")
-            print("Please add images to the input folder or specify --image")
-            return
-    elif args.image:
-        image_path = Path(args.image)
+    visualizer = SmolVLAAttentionVisualizer(config)
+    
+    try:
+        visualizer.load_model()
         
-        if image_path.exists():
-            images_to_process = [image_path]
-        else:
-            input_path = Path(input_dir) / args.image
-            if input_path.exists():
-                images_to_process = [input_path]
-            else:
+        if args.repo_id:
+            print("\n" + "=" * 60)
+            print("Loading data from LeRobotDataset")
+            print("=" * 60)
+            
+            data = load_dataset_item(
+                repo_id=args.repo_id,
+                episode_index=args.episode_index,
+                frame_index=args.frame_index,
+                root=args.dataset_root
+            )
+            
+            images = data['images']
+            state = data['state']
+            instruction = data['instruction']
+            
+            visualizer.set_normalization_stats(data['stats'])
+            image_name = f"ep{args.episode_index:03d}_frame{args.frame_index:04d}"
+            
+            print(f"\nData loaded:")
+            print(f"  Cameras: {list(images.keys())}")
+            print(f"  State shape: {state.shape if state is not None else 'None'}")
+            print(f"  Instruction: {instruction}")
+            
+            print(f"\n{'=' * 50}")
+            print(f"Processing: {image_name}")
+            print(f"{'=' * 50}")
+            
+            attention_weights, actions = visualizer.extract_attention_with_output(
+                images=images,
+                instruction=instruction,
+                state=state,
+                image_name=image_name,
+                normalize_state=True
+            )
+            
+            print(f"Captured attention from {len(attention_weights)} layers")
+            print(f"Predicted actions shape: {actions.shape}")
+            
+            visualizer.visualize_all(attention_weights, images, instruction)
+            
+        elif args.image:
+            image_path = Path(args.image)
+            if not image_path.exists():
+                image_path = Path("./myscripts/attention/inputs") / args.image
+            
+            if not image_path.exists():
                 print(f"Image not found: {args.image}")
-                print(f"Also checked: {input_path}")
                 return
-    else:
-        images_to_process = find_images_in_inputs()
-        if not images_to_process:
-            print(f"No images in {input_dir}, using random test image")
-            img_array = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
-            test_image = Image.fromarray(img_array)
-            images_to_process = [(test_image, "test_image")]
-    
-    # Process images
-    if args.detailed:
-        from analyze_smolvla_attention import SmolVLADetailedAnalyzer, DetailedAttentionConfig
-        
-        config = DetailedAttentionConfig(
-            model_path=args.model,
-            input_dir=input_dir,
-            output_dir=output_dir,
-            analyze_heads=True,
-            compute_statistics=True,
-            save_attention_data=True,
-        )
-        
-        analyzer = SmolVLADetailedAnalyzer(config)
-        try:
-            analyzer.load_model()
             
-            for item in images_to_process:
-                if isinstance(item, tuple):
-                    image, image_name = item
-                    image_path = None
-                else:
-                    image_path = str(item)
-                    image = Image.open(image_path).convert('RGB')
-                    image_name = item.stem
-                
-                print(f"\n{'='*50}")
-                print(f"Processing: {image_name}")
-                print(f"{'='*50}")
-                
-                analyzer.create_comprehensive_report(
-                    image, 
-                    args.instruction,
-                    image_name=image_name
-                )
-        finally:
-            analyzer.cleanup()
-    else:
-        from visualize_attention import SmolVLAAttentionVisualizer, AttentionConfig
+            image = Image.open(image_path).convert('RGB')
+            images = {"camera": image}
+            state = None
+            instruction = args.instruction
+            image_name = image_path.stem
+            
+            print(f"\n{'=' * 50}")
+            print(f"Processing: {image_name}")
+            print(f"{'=' * 50}")
+            
+            attention_weights, _ = visualizer.extract_attention_with_output(
+                images=images,
+                instruction=instruction,
+                image_name=image_name
+            )
+            
+            visualizer.visualize_all_layers(attention_weights, images, instruction)
         
-        config = AttentionConfig(
-            model_path=args.model,
-            input_dir=input_dir,
-            output_dir=output_dir,
-            overlay_alpha=args.overlay_alpha,
-            overlay_cmap=args.overlay_cmap,
-            selected_layers_for_overlay=selected_layers,
-        )
-        
-        visualizer = SmolVLAAttentionVisualizer(config)
-        try:
-            visualizer.load_model()
+        else:
+            images_to_process = find_images_in_input()
+            if not images_to_process:
+                print(f"No images in {input_dir}, using random test image")
+                img_array = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+                test_image = Image.fromarray(img_array)
+                images_to_process = [(test_image, "test_image")]
             
             for item in images_to_process:
                 if isinstance(item, tuple):
@@ -171,34 +241,31 @@ def main():
                     image = Image.open(image_path).convert('RGB')
                     image_name = item.stem
                 
-                print(f"\n{'='*50}")
+                print(f"\n{'=' * 50}")
                 print(f"Processing: {image_name}")
-                print(f"{'='*50}")
+                print(f"{'=' * 50}")
+                
+                images = {"camera": image}
                 
                 attention_weights, _ = visualizer.extract_attention_with_output(
-                    image, args.instruction, image_name=image_name
+                    images=images,
+                    instruction=args.instruction,
+                    image_name=image_name
                 )
                 
-                # Full visualization
-                visualizer.visualize_all_layers(attention_weights, image, args.instruction)
-                
-                # If specific layers are selected, generate overlay for those layers
-                if selected_layers:
-                    visualizer.visualize_attention_on_image(
-                        attention_weights, image, args.instruction,
-                        selected_layers=selected_layers,
-                        prefix="selected_layers_overlay"
-                    )
-        finally:
-            visualizer.cleanup()
-    
-    print(f"\nDone! Check {output_dir} for results.")
-    print("\nGenerated files include:")
-    print("  - *_layer_grid.png: Attention heatmaps for all layers")
-    print("  - *_overview.png: Overview with image and selected layers")
-    print("  - *_overlay_grid.png: Attention overlaid on original image")
-    print("  - *_comparison_paper_style.png: Paper-style visualization")
-    print("  - overlays/: Individual overlay images for each layer")
+                visualizer.visualize_all_layers(attention_weights, images, args.instruction)
+        
+        print(f"\nDone! Check {output_dir} for results.")
+        print("\nGenerated files include:")
+        print("  - overlays/vlm/         : VLM layer attention overlays (Layer 0-15)")
+        print("  - overlays/denoising/   : Denoising cross-attention overlays")
+        print("  - comparison/           : Multi-camera comparison (if multiple cameras)")
+        print("  - *_overview.png        : Grid overview images")
+        if args.save_matrix:
+            print("  - raw_matrices/         : Raw attention matrices")
+        
+    finally:
+        visualizer.cleanup()
 
 
 if __name__ == "__main__":
